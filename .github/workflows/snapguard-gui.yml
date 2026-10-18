@@ -1,0 +1,55 @@
+name: SnapGuard window
+
+# Builds the SnapGuard window and records its animations on a virtual screen:
+# a test file (EICAR) is found, goes into the cup, and is then deleted (Snappy
+# eats it) or trusted (it flies away). The SnapOS deny-list detects EICAR, so
+# no ClamAV is needed.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "src/snapguard-gui.c", "src/snapguard.c", ".github/workflows/snapguard-gui.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  window:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-3-dev xvfb imagemagick fonts-dejavu-core
+          make all gui GUICFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror"
+      - name: Record the animations
+        run: |
+          mkdir -p shots
+          for action in delete trust; do
+            w=$(mktemp -d); mkdir -p "$w/files" "$w/q"
+            echo WDVPIVAlQEFQWzRcUFpYNTQoUF4pN0NDKTd9JEVJQ0FSLVNUQU5EQVJELUFOVElWSVJVUy1URVNULUZJTEUhJEgrSCo= | base64 -d > "$w/files/eicar.com"
+            export SNAP_GUARD_SIGS=$PWD/security/signatures.txt SNAP_GUARD_ALLOW=$w/allow.txt SNAP_GUARD_QUARANTINE=$w/q
+            touch "$w/allow.txt"
+            PATH=$PWD/bin:$PATH xvfb-run -a -s "-screen 0 900x640x24" bash -c '
+              SNAPGUARD_TEST_SCAN="'"$w"'/files" SNAPGUARD_TEST_ACTION='"$action"' snapguard-gui &
+              pid=$!
+              sleep 1
+              for i in $(seq -w 1 75); do import -window root "shots/'"$action"'-$i.png"; sleep 0.15; done
+              kill $pid
+            '
+            ls "$w/q"
+          done
+          ls shots | wc -l
+      - name: Make GIFs of the canvas
+        run: |
+          for action in delete trust; do
+            convert -delay 15 -loop 0 shots/$action-*.png -crop 420x200+20+20 +repage shots/$action.gif || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snapguard-window
+          path: shots

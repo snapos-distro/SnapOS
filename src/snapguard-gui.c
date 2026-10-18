@@ -26,6 +26,8 @@ static const char *SPRITE[] = {
 #define SPRITE_ROWS (sizeof SPRITE / sizeof SPRITE[0])
 
 typedef enum { MOOD_IDLE, MOOD_SCAN, MOOD_CHOMP, MOOD_HAPPY, MOOD_SAD } Mood;
+/* the cup on the left: a virus arrives in it, Snappy eats it, or it flies away */
+typedef enum { ANIM_NONE, ANIM_ARRIVE, ANIM_EAT, ANIM_TRUST } Anim;
 
 typedef struct {
     GtkWidget *win, *canvas, *headline, *speech, *engine, *bar, *current, *count;
@@ -34,6 +36,11 @@ typedef struct {
     Mood mood;
     unsigned tick;
     unsigned chomp_left;
+    Anim anim;
+    unsigned anim_f;
+    int jailed, in_quarantine;
+    char *first_q;
+    cairo_surface_t *virus;
     int scanning;
     volatile int cancel;
     long threats, checked, total, unknown, skipped;
@@ -93,6 +100,7 @@ static void draw_cell(cairo_t *cr, gunichar ch, double x, double y) {
     case 0x2592: cairo_set_source_rgb(cr, 0.59, 0.11, 0.08); rect(cr, x, y, w, h); break;
     case 0x2593: cairo_set_source_rgb(cr, 0.75, 0.14, 0.10); rect(cr, x, y, w, h); break;
     case 0x2584: rect(cr, x, y + q, w, q); break;
+    case 0x2580: rect(cr, x, y, w, q); break;
     case 0x258C: rect(cr, x, y, m, h); break;
     case 0x2590: rect(cr, x + m, y, m, h); break;
     case 0x259F: rect(cr, x + m, y, m, q); rect(cr, x, y + q, w, q); break;
@@ -157,6 +165,162 @@ static void draw_cell(cairo_t *cr, gunichar ch, double x, double y) {
     }
 }
 
+
+/* The scene is 380x160: the cup on the left, Snappy on the right. */
+#define SCENE_W 380.0
+#define SCENE_H 160.0
+#define SN 0.62
+#define SNAPPY_X (SCENE_W - 30 * CW * SN - 8)
+#define SNAPPY_Y ((SCENE_H - 8 * LH * SN) / 2)
+#define MOUTH_X (SNAPPY_X + 16.5 * CW * SN)
+#define MOUTH_Y (SNAPPY_Y + 5.5 * LH * SN)
+#define CUP_X 62.0
+#define CUP_Y 140.0
+#define CUP_H (6 * LH * SN)
+#define VK 0.5
+
+/* The virus is drawn big ('#' = one pixel) and shrunk on screen. */
+static const char *VIRUS_ART[] = {
+    "................................................................",
+    "................................................................",
+    "................................................................",
+    "...................#####................#####...................",
+    "..................#######..............#######..................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    "..................#######..............#######..................",
+    "...................######..............######...................",
+    ".....................#####............#####.....................",
+    "......................####............####......................",
+    "......................####..########..####......................",
+    ".......................##################.......................",
+    ".......................##################.......................",
+    ".....................######################.....................",
+    ".....####...........########################...........####.....",
+    "....######.........##########################.........######....",
+    "...########.......############################.......########...",
+    "...########......###....################....###......########...",
+    "...#########....#####......##########......#####....#########...",
+    "...###########..#######......######......#######..###########...",
+    "...#######################....####....#######################...",
+    "....########################################################....",
+    ".....####..###########......########......###########..####.....",
+    "..............#######........######........#######..............",
+    "..............######..........####..........######..............",
+    ".............#######..........####..........#######.............",
+    ".............#######.....###..####.....###..#######.............",
+    ".............#######....#####.####....#####.#######.............",
+    ".............#######....#####.####....#####.#######.............",
+    ".............#######.....###..####.....###..#######.............",
+    ".............########........######........########.............",
+    ".............#########......########......#########.............",
+    ".............######################################.............",
+    "..............####################################..............",
+    "..............####################################..............",
+    ".....####..###########....................###########..####.....",
+    "....################..........................##############....",
+    "...################....##..##..##..##..##..##.###############...",
+    "...###########..##..##..#..##..##..##..##..##.##..###########...",
+    "...#########....##..##..##################....##....#########...",
+    "...########......##....########################......########...",
+    "...########.......##..########################.......########...",
+    "....######.........##########################.........######....",
+    ".....####...........########################...........####.....",
+    ".....................######################.....................",
+    ".......................##################.......................",
+    ".......................##################.......................",
+    "......................####..########..####......................",
+    "......................####............####......................",
+    ".....................#####............#####.....................",
+    "...................######..............######...................",
+    "..................#######..............#######..................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    ".................#########............#########.................",
+    "..................#######..............#######..................",
+    "...................#####................#####...................",
+    "................................................................",
+    "................................................................",
+    "................................................................",
+};
+static const char *CUP_ART[] = { "▄▄▄▄▄▄▄▄▄", "▐       ▌", "▐       ▌", " ▌     ▐ ", " ▌     ▐ ", " ▀▀▀▀▀▀▀ " };
+static const char *WING_L[2][2] = { { "◢█", " ◥" }, { " ◢", "◥█" } };
+static const char *WING_R[2][2] = { { "█◣", "◤ " }, { "◣ ", "█◤" } };
+
+static double ease(double t) {
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return t * t * (3 - 2 * t);
+}
+
+/* ASCII art drawn with Snappy's cells; (x, y) is the anchor point */
+static void art(cairo_t *cr, const char **rows, int n, double x, double y, double ax, double ay, double angle, double alpha) {
+    long cols = 0;
+    for (int i = 0; i < n; i++) cols = MAX(cols, g_utf8_strlen(rows[i], -1));
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_rotate(cr, angle);
+    cairo_scale(cr, SN, SN);
+    cairo_translate(cr, -cols * CW * ax, -n * LH * ay);
+    cairo_push_group(cr);
+    for (int r = 0; r < n; r++) {
+        double cx = 0;
+        for (const char *p = rows[r]; *p; p = g_utf8_next_char(p)) {
+            draw_cell(cr, g_utf8_get_char(p), cx, r * LH);
+            cx += CW;
+        }
+    }
+    cairo_pop_group_to_source(cr);
+    cairo_paint_with_alpha(cr, alpha);
+    cairo_restore(cr);
+}
+
+static cairo_surface_t *virus_surface(void) {
+    int h = G_N_ELEMENTS(VIRUS_ART), w = strlen(VIRUS_ART[0]);
+    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_t *c = cairo_create(s);
+    cairo_set_source_rgb(c, 0.886, 0.165, 0.11);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            if (VIRUS_ART[y][x] == '#') cairo_rectangle(c, x, y, 1, 1);
+    cairo_fill(c);
+    cairo_destroy(c);
+    return s;
+}
+
+static void draw_virus(cairo_t *cr, double x, double y, unsigned f, double angle, int wings, double k) {
+    if (wings) {
+        int up = (f / 2) % 2;
+        art(cr, WING_L[up], 2, x - 12 * k / VK, y - 3, 1.0, 0.5, 0, 1);
+        art(cr, WING_R[up], 2, x + 12 * k / VK, y - 3, 0.0, 0.5, 0, 1);
+    }
+    int w = cairo_image_surface_get_width(app.virus), h = cairo_image_surface_get_height(app.virus);
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_rotate(cr, angle);
+    cairo_scale(cr, k, k);
+    cairo_set_source_surface(cr, app.virus, -w / 2.0, -h / 2.0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+    cairo_paint(cr);
+    cairo_restore(cr);
+}
+
+static void draw_cup(cairo_t *cr, double x, double y, double angle, double alpha) {
+    art(cr, CUP_ART, G_N_ELEMENTS(CUP_ART), x, y, 0.5, 1.0, angle, alpha);
+}
+
+/* the virus inside the cup, hidden below the glass bottom */
+static void virus_in_cup(cairo_t *cr, double cupy, double x, double y, unsigned f, double angle, int wings) {
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, 0, SCENE_W, cupy - 6);
+    cairo_clip(cr);
+    draw_virus(cr, x, y, f, angle, wings, VK);
+    cairo_restore(cr);
+}
+
 static gboolean blinking(void) {
     unsigned t = app.tick;
     if (t == 8 || t == 9 || t == 15 || t == 16) return TRUE;
@@ -178,38 +342,122 @@ static void face(const char **eye, const char **mouth) {
     }
 }
 
-static gboolean on_draw(GtkWidget *w, cairo_t *cr, gpointer data) {
-    (void)data;
-    int width = gtk_widget_get_allocated_width(w);
-    double scale = 0.78;
-    double sw = 32 * CW * scale;
-    int height = gtk_widget_get_allocated_height(w);
-    double ox = (width - sw) / 2, oy = (height - SPRITE_ROWS * LH * scale) / 2;
-    if (app.mood == MOOD_SCAN) oy += (app.tick % 6 < 3) ? 0 : 2;
-    if (app.mood == MOOD_CHOMP) oy += (app.tick & 1) ? 0 : -3;
-    const char *eye, *mouth;
-    face(&eye, &mouth);
-    cairo_translate(cr, ox, oy);
-    cairo_scale(cr, scale, scale);
-    ox = 0;
-    oy = 0;
+static void draw_snappy(cairo_t *cr, const char *eye, const char *mouth, double dy) {
+    cairo_save(cr);
+    cairo_translate(cr, SNAPPY_X, SNAPPY_Y + dy);
+    cairo_scale(cr, SN, SN);
     for (size_t r = 0; r < SPRITE_ROWS; r++) {
         GString *ln = g_string_new(SPRITE[r]);
         g_string_replace(ln, "◉", eye, 0);
         g_string_replace(ln, "╲▼▼▼▼╱", mouth, 0);
-        double x = ox;
+        double x = 0;
         for (const char *p = ln->str; *p; p = g_utf8_next_char(p)) {
-            draw_cell(cr, g_utf8_get_char(p), x, oy + r * LH);
+            draw_cell(cr, g_utf8_get_char(p), x, r * LH);
             x += CW;
         }
         g_string_free(ln, TRUE);
     }
+    cairo_restore(cr);
+}
+
+static gboolean on_draw(GtkWidget *w, cairo_t *cr, gpointer data) {
+    (void)data;
+    double width = gtk_widget_get_allocated_width(w), height = gtk_widget_get_allocated_height(w);
+    double fit = MIN(1.0, MIN(width / SCENE_W, height / SCENE_H));
+    cairo_translate(cr, (width - SCENE_W * fit) / 2, (height - SCENE_H * fit) / 2);
+    cairo_scale(cr, fit, fit);
+
+    const char *eye, *mouth;
+    face(&eye, &mouth);
+    double dy = 0;
+    if (app.mood == MOOD_SCAN) dy = (app.tick % 6 < 3) ? 0 : 2;
+    if (app.mood == MOOD_CHOMP) dy = (app.tick & 1) ? 0 : -3;
+    int f = (int)app.anim_f;          /* signed: the timelines subtract from it */
+    double hy = CUP_Y - CUP_H * 0.45;
+
+    if (app.anim == ANIM_ARRIVE) {
+        if (f < 26) mouth = "╲▁▁▁▁╱";
+        draw_snappy(cr, eye, mouth, dy);
+        double cy = CUP_Y + (1 - ease(f / 10.0)) * 90;
+        double vhy = cy - CUP_H * 0.45;
+        if (f >= 6) {
+            double t = (f - 6) / 12.0, vy;
+            if (t < 1) vy = -25 + (vhy + 25) * t * t;
+            else { double b = f - 18; vy = vhy - fabs(sin(b * 0.55)) * 14 * exp(-b * 0.15); }
+            virus_in_cup(cr, cy, CUP_X, vy, f, t < 1 ? (f - 6) * 0.35 : 0, FALSE);
+        }
+        draw_cup(cr, CUP_X, cy, 0, 1);
+    } else if (app.anim == ANIM_EAT) {
+        double tx = SNAPPY_X - 46, ty = 112;
+        double p = ease((f - 2) / 12.0), back = ease((f - 40) / 10.0);
+        double tilt = 0.95 * ease((f - 12) / 10.0) * (1 - back);
+        double cx = CUP_X + (tx - CUP_X) * p, cy = CUP_Y + (ty - CUP_Y) * p;
+        cx += (CUP_X - cx) * back;
+        cy += (CUP_Y - cy) * back;
+        double alpha = 1 - ease((f - 46) / 8.0);
+        if (f >= 16 && f < 24) mouth = "╲◣██◢╱";
+        else if (f >= 24 && f < 40) {
+            int chew = f % 4 < 2;
+            mouth = chew ? "╲◣██◢╱" : "╲◤██◥╱";
+            eye = chew ? EYE_OPEN : EYE_SHUT;
+            dy = chew ? -3 : 0;
+        } else if (f >= 40) { eye = "^"; mouth = "╲▽▽▽▽╱"; }
+        draw_snappy(cr, eye, mouth, dy);
+        double r = CUP_H * 0.42;
+        double ix = cx + sin(tilt) * r, iy = cy - cos(tilt) * r;
+        if (f < 18) draw_virus(cr, ix, iy, f, tilt, FALSE, VK);
+        else if (f < 26) {
+            double t = ease((f - 18) / 8.0), u = MIN(1.0, t * 2);
+            double rimx = cx + sin(tilt) * CUP_H, rimy = cy - cos(tilt) * CUP_H;
+            double sx = ix + (rimx - ix) * u, sy = iy + (rimy - iy) * u;
+            draw_virus(cr, sx + (MOUTH_X - sx) * t, sy + (MOUTH_Y - sy) * t - sin(t * G_PI) * 14, f, tilt + t * 3, FALSE,
+                       VK * (1 - 0.5 * t));
+        }
+        if (alpha > 0) draw_cup(cr, cx, cy, tilt, alpha);
+        if (f >= 24 && f < 40 && f % 4 < 2) {
+            cairo_set_source_rgb(cr, 0.886, 0.165, 0.11);
+            for (int j = 0; j < 3; j++) rect(cr, MOUTH_X - 26 - j * 8, MOUTH_Y + 2 - j * 6 + (f % 4) * 3, 4, 4);
+        }
+    } else if (app.anim == ANIM_TRUST) {
+        if (f >= 28) { eye = "^"; mouth = "╲▽▽▽▽╱"; }
+        draw_snappy(cr, eye, mouth, dy);
+        double vx = CUP_X, vy = hy;
+        if (f >= 10) {
+            double t = (f - 10) / 26.0;
+            vx = CUP_X - 50 * t * t + sin(f * 0.5) * 8;
+            vy = hy - 170 * t + sin(f * 0.8) * 5;
+        }
+        double alpha = 1 - ease((f - 20) / 10.0);
+        if (f < 13) virus_in_cup(cr, CUP_Y, vx, vy, f, sin(f * 0.5) * 0.2, f >= 5);
+        else draw_virus(cr, vx, vy, f, sin(f * 0.5) * 0.2, TRUE, VK);
+        if (alpha > 0) draw_cup(cr, CUP_X, CUP_Y, 0, alpha);
+    } else {
+        draw_snappy(cr, eye, mouth, dy);
+        if (app.jailed) {
+            unsigned t = app.tick;
+            virus_in_cup(cr, CUP_Y, CUP_X + sin(t * 0.22) * 6, hy - fabs(sin(t * 0.45)) * 6, t, sin(t * 0.45) * 0.25, FALSE);
+            double shake = (t % 10 == 3 || t % 10 == 4) ? 1.5 : 0;
+            draw_cup(cr, CUP_X + shake, CUP_Y, shake * 0.02, 1);
+        }
+    }
     return FALSE;
+}
+
+static void start_anim(Anim a) {
+    app.anim = a;
+    app.anim_f = 0;
 }
 
 static gboolean on_tick(gpointer data) {
     (void)data;
     app.tick++;
+    if (app.anim != ANIM_NONE) {
+        static const unsigned len[] = { 0, 40, 60, 46 };
+        if (++app.anim_f >= len[app.anim]) {
+            app.jailed = app.anim == ANIM_ARRIVE ? TRUE : app.in_quarantine;
+            app.anim = ANIM_NONE;
+        }
+    }
     if (app.mood == MOOD_CHOMP) {
         if (app.chomp_left > 0) app.chomp_left--;
         if (app.chomp_left == 0) app.mood = app.scanning ? MOOD_SCAN : MOOD_HAPPY;
@@ -500,6 +748,19 @@ static void finish_scan(const char *target, int stopped) {
     g_free(what);
 }
 
+/* For the VM test only: SNAPGUARD_TEST_SCAN scans a folder at start, and
+ * SNAPGUARD_TEST_ACTION (delete or trust) acts on the first quarantined file. */
+static void on_keep(GtkButton *b, gpointer name);
+static void delete_now(const char *name);
+static gboolean test_action(gpointer d) {
+    (void)d;
+    const char *a = g_getenv("SNAPGUARD_TEST_ACTION");
+    if (!app.first_q || !app.in_quarantine) return G_SOURCE_REMOVE;
+    if (!strcmp(a, "delete")) delete_now(app.first_q);
+    else if (!strcmp(a, "trust")) on_keep(NULL, app.first_q);
+    return G_SOURCE_REMOVE;
+}
+
 static gboolean on_msg(gpointer data) {
     Msg *m = data;
     if (m->kind == M_PROGRESS) {
@@ -525,8 +786,7 @@ static gboolean on_msg(gpointer data) {
         }
     } else if (m->kind == M_THREAT) {
         app.threats++;
-        app.mood = MOOD_CHOMP;
-        app.chomp_left = 14;
+        if (!app.jailed && app.anim == ANIM_NONE) start_anim(ANIM_ARRIVE);
         char *b = g_path_get_basename(m->a);
         char *s = g_strdup_printf("Contained '%s'. Nothing was deleted.", b);
         set_headline("Threat contained");
@@ -555,6 +815,7 @@ static gboolean on_msg(gpointer data) {
         app.total = m->total;
         finish_scan(m->a ? m->a : "", m->b != NULL);
         refresh_quarantine();
+        if (g_getenv("SNAPGUARD_TEST_ACTION")) g_timeout_add(4000, test_action, NULL);
     }
     g_free(m->a);
     g_free(m->b);
@@ -629,6 +890,17 @@ static void on_keep(GtkButton *b, gpointer name) {
     set_headline("File restored");
     set_speech("The file was put back and is now trusted.");
     app.mood = MOOD_HAPPY;
+    start_anim(ANIM_TRUST);
+    refresh_quarantine();
+}
+
+static void delete_now(const char *name) {
+    char *argv[] = { app.guard, "delete", (char *)name, NULL };
+    int st;
+    g_free(run_guard(argv, &st));
+    set_headline("File deleted");
+    set_speech("The file was permanently deleted.");
+    start_anim(ANIM_EAT);
     refresh_quarantine();
 }
 
@@ -641,12 +913,7 @@ static void on_delete(GtkButton *b, gpointer name) {
     int r = gtk_dialog_run(GTK_DIALOG(dlg));
     gtk_widget_destroy(dlg);
     if (r != GTK_RESPONSE_OK) return;
-    char *argv[] = { app.guard, "delete", name, NULL };
-    int st;
-    g_free(run_guard(argv, &st));
-    set_headline("File deleted");
-    set_speech("The file was permanently deleted.");
-    refresh_quarantine();
+    delete_now(name);
 }
 
 static void free_data(gpointer d, GClosure *c) {
@@ -689,7 +956,11 @@ static void refresh_quarantine(void) {
     int any = 0;
     for (char **l = lines; *l; l++) {
         if (g_str_has_prefix(*l, "      was: ")) {
-            if (name) { add_quarantine_row(name, *l + strlen("      was: ")); any = 1; g_free(name); name = NULL; }
+            if (name) {
+                add_quarantine_row(name, *l + strlen("      was: "));
+                if (!any) { g_free(app.first_q); app.first_q = g_strdup(name); }
+                any = 1; g_free(name); name = NULL;
+            }
         } else if (g_str_has_prefix(*l, "  ") && (*l)[2] != ' ') {
             g_free(name);
             name = g_strdup(g_strstrip(*l));
@@ -698,6 +969,8 @@ static void refresh_quarantine(void) {
     g_free(name);
     g_strfreev(lines);
     g_free(out);
+    app.in_quarantine = any;
+    if (app.anim == ANIM_NONE) app.jailed = any;
     if (!any) {
         GtkWidget *row = gtk_list_box_row_new();
         GtkWidget *lb = gtk_label_new("Quarantine is empty.");
@@ -809,7 +1082,8 @@ static void activate(GtkApplication *a, gpointer d) {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_style_context_add_class(gtk_widget_get_style_context(card), "card");
     app.canvas = gtk_drawing_area_new();
-    gtk_widget_set_size_request(app.canvas, 300, 150);
+    gtk_widget_set_size_request(app.canvas, 380, 160);
+    app.virus = virus_surface();
     g_signal_connect(app.canvas, "draw", G_CALLBACK(on_draw), NULL);
     gtk_box_pack_start(GTK_BOX(card), app.canvas, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(top), card, FALSE, FALSE, 0);
@@ -888,7 +1162,10 @@ static void activate(GtkApplication *a, gpointer d) {
 
     app.guard = find_guard();
     refresh_engine();
+    refresh_quarantine();          /* a virus already in quarantine sits in the cup */
     g_timeout_add(80, on_tick, NULL);
+    const char *ts = g_getenv("SNAPGUARD_TEST_SCAN");
+    if (ts && *ts) start_scan(ts);
     gtk_widget_show_all(app.win);
 }
 

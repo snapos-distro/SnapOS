@@ -626,6 +626,7 @@ check "the login window knows about package updates" bash -c "grep -q 'Package u
 check "on ARM64 the system is named SnapOS ... ARM" bash -c "grep -q 'isAarch64 \" ARM\"' '$ROOT/nix/modules/snapos.nix' && grep -q 'VARIANT_ID=arm64' '$ROOT/nix/modules/snapos.nix'"
 
 section "releases"
+check "SnapGuard has the cup, the virus and its animations" bash -c "grep -q 'ANIM_ARRIVE' '$ROOT/src/snapguard-gui.c' && grep -q 'ANIM_EAT' '$ROOT/src/snapguard-gui.c' && grep -q 'ANIM_TRUST' '$ROOT/src/snapguard-gui.c' && grep -q 'VIRUS_ART' '$ROOT/src/snapguard-gui.c'"
 check "the installer writes everything to disk before it says it is done" bash -c "awk '/^restart\\(\\)/,/^}/' '$ROOT/nix/installer/snap-install-nixos.sh' | awk '/umount -R \\/mnt/{u=NR} /SNAPOS-INSTALL-OK/{o=NR} END{exit !(u && o && u < o)}'"
 check "builds and tests run in the staging repository only" bash -c "for w in desktop-test build-nixos-iso build-nixos-iso-arm snap-deb; do grep -q \"github.repository == 'snapos-distro/snapos-test'\" '$ROOT/.github/workflows/'\$w.yml || exit 1; done"
 check "the official draft is a copy of a tested build of the same commit" bash -c "grep -q 'test \"\$commit\" = \"\$GITHUB_SHA\"' '$ROOT/.github/workflows/draft-release.yml' && grep -q 'sha256sum -c' '$ROOT/.github/workflows/draft-release.yml' && grep -q -- '--draft' '$ROOT/.github/workflows/draft-release.yml'"
