@@ -327,9 +327,12 @@ die() {
 
 restart() {
     printf '\n'
+    # everything reaches the disk before anyone is told the install is done
+    sync
+    umount -R /mnt 2>/dev/null
+    sync
     if [ "$UNATTENDED" = 1 ]; then printf 'SNAPOS-INSTALL-OK\n'; sleep 3
     else say "$(t done_hint)"; read -r _; fi
-    sync
     systemctl reboot 2>/dev/null || reboot -f
     exit 0
 }

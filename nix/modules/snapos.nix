@@ -85,8 +85,8 @@ in {
       VERSION_ID="${snaposVersion}"
       PRETTY_NAME="SnapOS ${snaposVersion}${optionalString pkgs.stdenv.hostPlatform.isAarch64 " ARM"}"${optionalString pkgs.stdenv.hostPlatform.isAarch64 "\nVARIANT=\"ARM64\"\nVARIANT_ID=arm64"}
       BUILD_ID="${config.system.nixos.version}"
-      HOME_URL="https://github.com/Juco7L7/SnapOS"
-      SUPPORT_URL="https://github.com/Juco7L7/SnapOS/issues"
+      HOME_URL="https://github.com/snapos-distro/SnapOS"
+      SUPPORT_URL="https://github.com/snapos-distro/SnapOS/issues"
       LOGO=snapos
     '';
     environment.etc."snapos/version".text = snaposVersion;

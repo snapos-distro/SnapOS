@@ -29,8 +29,8 @@ static const char *flake_attr(void) {
     else snprintf(attr, sizeof attr, "snapos");
     return attr;
 }
-#define UPDATE_API     "https://api.github.com/repos/Juco7L7/SnapOS"
-#define UPDATE_WEB     "https://github.com/Juco7L7/SnapOS"
+#define UPDATE_API     "https://api.github.com/repos/snapos-distro/snapos-updates"
+#define UPDATE_WEB     "https://github.com/snapos-distro/snapos-updates"
 
 #define RED "\033[91m"
 #define GRN "\033[32m"

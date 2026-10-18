@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       from_tag:
-        description: "Pre-release in Juco7L7/snapos-test to copy (e.g. v2.3.1)"
+        description: "Pre-release in snapos-distro/snapos-test to copy (e.g. v2.3.1)"
         required: true
       tag:
         description: "Tag of the release here (e.g. ISO6)"
@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   draft:
-    if: github.repository != 'Juco7L7/snapos-test'
+    if: github.repository != 'snapos-distro/snapos-test'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -30,7 +30,7 @@ jobs:
 
       - name: Download the tested files
         run: |
-          base="https://github.com/Juco7L7/snapos-test/releases/download/${{ inputs.from_tag }}"
+          base="https://github.com/snapos-distro/snapos-test/releases/download/${{ inputs.from_tag }}"
           for f in snapos-installer.iso snapos-installer.iso.sha256 \
                    snapos-installer-aarch64.iso snapos-installer-aarch64.iso.sha256 \
                    snapos-source.tar.gz snapos-source.tar.gz.sha256 snapos-release.txt; do

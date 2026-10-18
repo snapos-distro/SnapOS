@@ -44,28 +44,6 @@ let
     # Super+L lock, Print screenshot.
     monitor = , preferred, auto, 1
 
-    # title bars with close, maximize and minimize buttons (hyprbars)
-    plugin = ${pkgs.hyprlandPlugins.hyprbars}/lib/libhyprbars.so
-    plugin {
-        hyprbars {
-            bar_height = 30
-            bar_color = rgb(${bg})
-            col.text = rgb(${fg})
-            bar_text_font = Cantarell
-            bar_text_size = 11
-            bar_text_weight = bold
-            bar_part_of_window = true
-            bar_precedence_over_border = true
-            bar_padding = 10
-            bar_button_padding = 8
-            # buttons, right to left: close, maximize, minimize (Super+H brings it back)
-            hyprbars-button = rgb(${accent}), 14, ✕, hyprctl dispatch killactive, rgb(ffffff)
-            hyprbars-button = rgb(${dim}), 14, □, hyprctl dispatch fullscreen 1, rgb(${fg})
-            hyprbars-button = rgb(${dim}), 14, –, hyprctl dispatch movetoworkspacesilent special:min, rgb(${fg})
-            on_double_click = hyprctl dispatch fullscreen 1
-        }
-    }
-
     exec-once = waybar
     exec-once = mako
     exec-once = swaybg -i ${wallpaper} -m fill
@@ -128,7 +106,6 @@ let
     bind = $mod, F, fullscreen,
     bind = $mod, V, togglefloating,
     bind = $mod, L, exec, hyprlock
-    bind = $mod, H, togglespecialworkspace, min
     bind = $mod SHIFT, E, exit,
     bind = , Print, exec, grim -g "$(slurp)" - | wl-copy
     bind = $mod, left, movefocus, l
@@ -184,7 +161,7 @@ let
     spacing = 2;
     modules-left = [ "custom/menu" "custom/snapguard" "custom/firefox" "custom/software" "custom/terminal" "hyprland/window" ];
     modules-center = [ "hyprland/workspaces" ];
-    modules-right = [ "tray" "network" "pulseaudio" "battery" "clock" ];
+    modules-right = [ "tray" "pulseaudio" "battery" "clock" ];
     "custom/menu" = { format = " "; on-click = launcher; tooltip = false; };
     "custom/snapguard" = { format = " "; on-click = "snapguard-gui"; tooltip = false; };
     "custom/firefox" = { format = " "; on-click = "firefox"; tooltip = false; };
@@ -198,7 +175,6 @@ let
       format-icons = { "1" = "1"; "2" = "2"; "3" = "3"; "4" = "4"; "5" = "5"; "6" = "6"; "7" = "7"; "8" = "8"; "9" = "9"; special = "▾"; default = "•"; };
     };
     clock = { format = "{:%H:%M}"; format-alt = "{:%a %d %b %Y}"; tooltip-format = "{:%A, %d %B %Y}"; };
-    network = { format-wifi = "  {essid}"; format-ethernet = "  wired"; format-disconnected = "  offline"; on-click = "nm-connection-editor"; };
     pulseaudio = { format = "  {volume}%"; format-muted = "  muted"; on-click = "pavucontrol"; };
     battery = { format = "  {capacity}%"; format-charging = "  {capacity}%"; };
     tray = { spacing = 8; icon-size = 20; };
@@ -217,7 +193,7 @@ let
     #window { padding: 0 14px; color: #${fg}; }
     #workspaces button { padding: 0 8px; color: #${fg}; border-bottom: 3px solid transparent; }
     #workspaces button.active { color: #${accent}; border-bottom: 3px solid #${accent}; }
-    #clock, #network, #pulseaudio, #battery, #tray { padding: 0 10px; }
+    #clock, #pulseaudio, #battery, #tray { padding: 0 10px; }
     #clock { font-weight: bold; padding-right: 16px; }
   '';
 

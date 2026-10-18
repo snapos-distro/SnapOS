@@ -626,7 +626,8 @@ check "the login window knows about package updates" bash -c "grep -q 'Package u
 check "on ARM64 the system is named SnapOS ... ARM" bash -c "grep -q 'isAarch64 \" ARM\"' '$ROOT/nix/modules/snapos.nix' && grep -q 'VARIANT_ID=arm64' '$ROOT/nix/modules/snapos.nix'"
 
 section "releases"
-check "builds and tests run in the staging repository only" bash -c "for w in desktop-test build-nixos-iso build-nixos-iso-arm snap-deb; do grep -q \"github.repository == 'Juco7L7/snapos-test'\" '$ROOT/.github/workflows/'\$w.yml || exit 1; done"
+check "the installer writes everything to disk before it says it is done" bash -c "awk '/^restart\\(\\)/,/^}/' '$ROOT/nix/installer/snap-install-nixos.sh' | awk '/umount -R \\/mnt/{u=NR} /SNAPOS-INSTALL-OK/{o=NR} END{exit !(u && o && u < o)}'"
+check "builds and tests run in the staging repository only" bash -c "for w in desktop-test build-nixos-iso build-nixos-iso-arm snap-deb; do grep -q \"github.repository == 'snapos-distro/snapos-test'\" '$ROOT/.github/workflows/'\$w.yml || exit 1; done"
 check "the official draft is a copy of a tested build of the same commit" bash -c "grep -q 'test \"\$commit\" = \"\$GITHUB_SHA\"' '$ROOT/.github/workflows/draft-release.yml' && grep -q 'sha256sum -c' '$ROOT/.github/workflows/draft-release.yml' && grep -q -- '--draft' '$ROOT/.github/workflows/draft-release.yml'"
 check "both architectures of a release come from one commit" grep -q 'test "\$a" = "\$b"' "$ROOT/.github/workflows/collect-release.yml"
 check "this version has its release notes" test -s "$ROOT/docs/releases/$(cat "$ROOT/VERSION").md"
@@ -735,7 +736,7 @@ check "Hyprland has a bar, a launcher, notifications and a wallpaper" bash -c "g
 check "Plasma and Xfce get the SnapOS look" bash -c "grep -q 'AccentColor=226,42,28' '$D_NIX' && grep -q 'ThemeName' '$D_NIX' && grep -q 'plasma-apply-wallpaperimage' '$D_NIX' && grep -q 'xfconf-query' '$D_NIX'"
 check "the light appearance reaches every desktop" bash -c "grep -q 'BreezeLight' '$D_NIX' && grep -q 'org.kde.breeze.desktop' '$D_NIX' && grep -q 'if light then \"ece9e5\"' '$D_NIX'"
 check "a VM test exists for each desktop in both appearances" bash -c "for d in desktop plasma xfce hyprland; do grep -qE \"^  \$d = \\w+ \\\"dark\\\";\" '$ROOT/nix/tests/desktop.nix' && grep -qE \"^  \$d-light = \\w+ \\\"light\\\";\" '$ROOT/nix/tests/desktop.nix' || exit 1; done"
-check "Hyprland windows have title bars with close, maximize and minimize" bash -c "grep -q 'libhyprbars.so' '$D_NIX' && [ \$(grep -c 'hyprbars-button' '$D_NIX') -ge 3 ]"
+check "Hyprland tiles its windows, with no title bars and one network icon" bash -c "! grep -q 'hyprbars' '$D_NIX' && ! grep -q '\"network\"' '$D_NIX' && grep -q 'nm-applet --indicator' '$D_NIX'"
 check "Hyprland uses the Adwaita cursor like Budgie" grep -q 'XCURSOR_THEME, Adwaita' "$D_NIX"
 check "NetworkManager is on for every desktop" grep -q 'networking.networkmanager.enable = true;' "$ROOT/nix/modules/snapos.nix"
 check "SnapHelper's files are linked on every desktop" grep -q 'environment.pathsToLink = \[ "/share/snapos" \]' "$ROOT/nix/modules/snapos.nix"

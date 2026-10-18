@@ -1,0 +1,37 @@
+name: Check the update source
+
+# The real updater, built from this commit, asks the real updates repository
+# (snapos-distro/snapos-updates) what the latest release is.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "src/snapos.c", ".github/workflows/update-source.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build snapos
+        run: make all
+      - name: Ask the updates repository
+        run: |
+          set -x
+          s=$(mktemp -d)
+          mkdir -p "$s/sys" "$s/state"
+          cp VERSION flake.lock "$s/sys/"
+          printf 'VERSION_ID="2.4"\n' > "$s/os-release"
+          printf '0000000000000000000000000000000000000000\n2026-01-01\nold\n' > "$s/sys/release"
+          rc=0
+          out=$(SNAPOS_NIX_DIR="$s/sys" SNAPOS_STATE_DIR="$s/state" SNAPOS_OS_RELEASE="$s/os-release" bin/snapos update check) || rc=$?
+          echo "$out"; echo "exit $rc"
+          latest=$(curl -fsSL https://github.com/snapos-distro/snapos-updates/releases/latest/download/snapos-release.txt | sed -n 's/^commit=//p')
+          test "$rc" = 10
+          echo "$out" | grep -q "^latest ${latest:0:7}"
+          grep -q 'snapos-distro/snapos-updates' src/snapos.c

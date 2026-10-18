@@ -227,8 +227,6 @@ let
       machine.wait_until_succeeds(hy + "hyprctl layers | grep -q waybar'", timeout=120)
       machine.execute(hy + "hyprctl layers > /tmp/hypr-layers.txt; hyprctl clients > /tmp/hypr-clients.txt'")
       machine.succeed("grep -q waybar /tmp/hypr-layers.txt")
-      # the title bars come from the hyprbars plugin
-      machine.wait_until_succeeds(hy + "hyprctl plugins list | grep -q hyprbars'", timeout=60)
     '';
   };
 in

@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   collect:
-    if: github.repository == 'Juco7L7/snapos-test'
+    if: github.repository == 'snapos-distro/snapos-test'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

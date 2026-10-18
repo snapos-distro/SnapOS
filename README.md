@@ -213,10 +213,9 @@ To switch later, change `snapos.desktop` in `/etc/snapos/local.nix` and run
 | Super + D | launcher |
 | Super + Q | close the window |
 | Super + 1..9 | workspaces |
-| Super + H | the minimized windows |
 | Print | screenshot |
 
-Windows have title bars with close, maximize and minimize.
+Windows tile side by side; the network icon is in the bar's tray.
 
 </details>
 
