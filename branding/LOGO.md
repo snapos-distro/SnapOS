@@ -1,7 +1,8 @@
 # SnapOS logo
 
 **The logo is a red snapping-turtle shell**: a hexagonal carapace of scutes
-ringed with bold triangular spikes. The spikes symbolize **security**: SnapOS is
+ringed with bold triangular spikes, twelve of them, one every 30 degrees; the
+top and bottom ones are bigger, with their tip cut flat. The spikes symbolize **security**: SnapOS is
 security-first, and the shell is armored.
 
 **Snappy is not the logo.** Snappy is the small ASCII snapping turtle that
@@ -13,7 +14,9 @@ installer. The logo is the shell alone.
 | File | What it is |
 | --- | --- |
 | `snapos-logo.png` | Master logo, transparent background, 512x512. |
-| `icons/snapos-*.png`, `icons/snapos.svg` | The logo at icon sizes. |
+| `icons/snapos.svg` | The logo as a vector: seven hexagons and twelve spikes. |
+| `icons/snapos-*.png` | The logo at icon sizes. |
+| `wallpapers/snapos-default.jpeg`, `wallpapers/snapos-light.jpeg` | The dark and light wallpapers, 2560x1440. |
 | `fastfetch/snapos-logo.txt` | ASCII rendition, used as the fastfetch logo. |
 | `snappy-mascot.txt` | Snappy, the ASCII mascot (installer banner). |
 | `snappy-defends.gif` | Snappy containing a threat (SnapGuard section). |

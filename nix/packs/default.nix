@@ -38,5 +38,7 @@ let pack = name: what: mkEnableOption "the SnapOS ${name} pack: ${what}"; in
   # `snapos log` run as the user; what is private in it keeps its own mode).
   config = mkIf (any (p: p.enable) (attrValues config.snapos.packs)) {
     systemd.tmpfiles.rules = [ "d /var/lib/snapos 0755 root root -" ];
+    # the packs version, which `snapos update` compares with the newest release
+    environment.etc."snapos-packs".text = builtins.readFile ../../VERSION;
   };
 }

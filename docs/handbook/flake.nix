@@ -3,7 +3,7 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
-    snapos.url = "github:snapos-distro/SnapOS";
+    snapos.url = "https://github.com/snapos-distro/snapos-updates/releases/latest/download/snapos-source.tar.gz";
     snapos.inputs.nixpkgs.follows = "nixpkgs";
   };
 

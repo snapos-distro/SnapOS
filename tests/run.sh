@@ -418,6 +418,16 @@ check_eq "a system built by hand sees a newer SnapOS release of its packs" "10" 
 sed -i 's/1111111111111111111111111111111111111111/2222222222222222222222222222222222222222/' "$H/sys/flake.lock"
 hb update check >/dev/null 2>&1
 check_eq "and is current when its packs are the latest" "0" "$?"
+# the handbook takes the packs from the snapos-updates tarball: no rev, compared by version
+printf '{\n  "nodes": {\n    "snapos": {\n      "locked": {\n        "lastModified": 1700000000,\n        "narHash": "sha256-x",\n        "type": "tarball",\n        "url": "https://github.com/snapos-distro/snapos-updates/releases/latest/download/snapos-source.tar.gz"\n      },\n      "original": { "type": "tarball" }\n    }\n  }\n}\n' > "$H/sys/flake.lock"
+printf '9.8\n' > "$H/packs-version"
+SNAPOS_PACKS_FILE="$H/packs-version" hb update check >/dev/null 2>&1
+check_eq "packs from the updates tarball see a newer version" "10" "$?"
+printf '9.9\n' > "$H/packs-version"
+SNAPOS_PACKS_FILE="$H/packs-version" hb update check >/dev/null 2>&1
+check_eq "and are current at the newest version" "0" "$?"
+check "the packs write their version for that check" grep -q 'environment.etc."snapos-packs".text = builtins.readFile ../../VERSION' "$ROOT/nix/packs/default.nix"
+check "the handbook takes the packs from snapos-updates" grep -q 'snapos-updates/releases/latest/download/snapos-source.tar.gz' "$ROOT/docs/handbook/flake.nix"
 check "the state folder can be read by the login check" bash -c "grep -q 'd /var/lib/snapos 0755' '$MODS' && grep -q 'd /var/lib/snapos/quarantine 0700' '$MODS'"
 check "snapupdate opens the terminal the desktop has" bash -c "for t in gnome-terminal konsole xfce4-terminal kitty; do grep -q \"\\\"\$t\\\"\" '$ROOT/src/snapupdate.c' || exit 1; done"
 check "snapupdate keeps asking during the day" grep -q 'SNAPUPDATE_EVERY' "$ROOT/src/snapupdate.c"

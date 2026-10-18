@@ -84,7 +84,7 @@ jobs:
           run("sudo snapos-generate-config --root /mnt && ls -la /mnt/etc/nixos /mnt/etc/snapos")
           run("sudo cp /etc/snapos-src/docs/handbook/flake.nix /etc/snapos-src/docs/handbook/configuration.nix /mnt/etc/snapos/")
           # only for this test: the packs of this very commit, which is not on GitHub's SnapOS yet
-          run("sudo cp -rL /etc/snapos-src /mnt/etc/snapos/snapos && sudo chmod -R u+w /mnt/etc/snapos/snapos && sudo sed -i 's|github:snapos-distro/SnapOS|path:./snapos|' /mnt/etc/snapos/flake.nix")
+          run("sudo cp -rL /etc/snapos-src /mnt/etc/snapos/snapos && sudo chmod -R u+w /mnt/etc/snapos/snapos && sudo sed -i 's|https://github.com/snapos-distro/snapos-updates/releases/latest/download/snapos-source.tar.gz|path:./snapos|' /mnt/etc/snapos/flake.nix && grep -q 'path:./snapos' /mnt/etc/snapos/flake.nix")
           run("sudo sed -i 's|^  system.stateVersion|  boot.kernelParams = [ \"console=ttyS0,115200\" ];\\n  system.stateVersion|' /mnt/etc/snapos/configuration.nix && grep -n 'snapos\\|kernelParams' /mnt/etc/snapos/*.nix")
           run("sudo snapos-install --flake /mnt/etc/snapos#mypc --no-root-passwd", timeout=7200)
           run("echo ana:snapos | sudo snapos-enter --root /mnt -c chpasswd")
