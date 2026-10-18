@@ -30,15 +30,17 @@ jobs:
         run: |
           gh release download "${{ inputs.x86_tag }}" --repo "$GITHUB_REPOSITORY" \
             -p snapos-installer.iso -p snapos-installer.iso.sha256 \
+            -p snapos-minimal.iso -p snapos-minimal.iso.sha256 \
             -p snapos-source.tar.gz -p snapos-source.tar.gz.sha256 -p snapos-release.txt
           gh release download "${{ inputs.arm_tag }}" --repo "$GITHUB_REPOSITORY" \
-            -p snapos-installer-aarch64.iso -p snapos-installer-aarch64.iso.sha256
+            -p snapos-installer-aarch64.iso -p snapos-installer-aarch64.iso.sha256 \
+            -p snapos-minimal-aarch64.iso -p snapos-minimal-aarch64.iso.sha256
           mkdir arm && gh release download "${{ inputs.arm_tag }}" --repo "$GITHUB_REPOSITORY" -p snapos-release.txt -D arm
           ls -l
 
       - name: Both builds are of the same commit, and the files are whole
         run: |
-          sha256sum -c snapos-installer.iso.sha256 snapos-installer-aarch64.iso.sha256 snapos-source.tar.gz.sha256
+          sha256sum -c snapos-installer.iso.sha256 snapos-installer-aarch64.iso.sha256 snapos-minimal.iso.sha256 snapos-minimal-aarch64.iso.sha256 snapos-source.tar.gz.sha256
           a=$(sed -n 's/^commit=//p' snapos-release.txt); b=$(sed -n 's/^commit=//p' arm/snapos-release.txt)
           echo "x86_64: $a"; echo "ARM64:  $b"
           test -n "$a" && test "$a" = "$b"
@@ -52,4 +54,5 @@ jobs:
             --notes "Tested build of commit ${commit::7}. The official release is made from these files." \
             snapos-installer.iso snapos-installer.iso.sha256 \
             snapos-installer-aarch64.iso snapos-installer-aarch64.iso.sha256 \
+            snapos-minimal.iso snapos-minimal.iso.sha256 snapos-minimal-aarch64.iso snapos-minimal-aarch64.iso.sha256 \
             snapos-source.tar.gz snapos-source.tar.gz.sha256 snapos-release.txt

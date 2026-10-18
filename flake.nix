@@ -18,6 +18,7 @@
         snapos-tools = final.callPackage ./nix/pkgs/snapos-tools.nix { src = self; };
         snapguard = final.callPackage ./nix/pkgs/snapguard.nix { src = self; };
         snaphelper = final.callPackage ./nix/pkgs/snaphelper.nix { src = self; };
+        snapos-nix-tools = final.callPackage ./nix/pkgs/snapos-nix-tools.nix { };
         nixos-icons = final.callPackage ./nix/pkgs/snapos-icons.nix { };
         fastfetch = final.symlinkJoin {
           name = "fastfetch";
@@ -58,6 +59,7 @@
           modules = [ { snapos.appearance = "light"; } ];
         };
         snapos-installer = mkSystem "x86_64-linux" [ ./nix/iso.nix ];
+        snapos-minimal = mkSystem "x86_64-linux" [ ./nix/minimal.nix ];
 
         # ARM64: the installer and `snapos rebuild` pick these on an aarch64 computer.
         snapos-aarch64 = mkSystem "aarch64-linux" [ ./configuration.nix ];
@@ -65,7 +67,15 @@
           modules = [ { snapos.appearance = "light"; } ];
         };
         snapos-installer-aarch64 = mkSystem "aarch64-linux" [ ./nix/iso.nix ];
+        snapos-minimal-aarch64 = mkSystem "aarch64-linux" [ ./nix/minimal.nix ];
       };
+
+      # The packs, for any NixOS system (see the handbook):
+      #   modules = [ snapos.nixosModules.packs ./configuration.nix ];
+      #   snapos.packs.theme.enable = true;
+      nixosModules.packs = { nixpkgs.overlays = [ snaposOverlay ]; imports = [ ./nix/packs ]; };
+      # The whole SnapOS, as the installer sets it up.
+      nixosModules.default = { nixpkgs.overlays = [ snaposOverlay ]; imports = [ ./nix/modules/snapos.nix ]; };
 
       # `nix build .#iso` builds the image of the machine it runs on.
       packages = forAll (sys:
@@ -73,6 +83,7 @@
           snapos-tools = p.snapos-tools;
           debootstrap = p.debootstrap;
           iso = self.nixosConfigurations."snapos-installer${a}".config.system.build.isoImage;
+          iso-minimal = self.nixosConfigurations."snapos-minimal${a}".config.system.build.isoImage;
           toplevel = self.nixosConfigurations."snapos${a}".config.system.build.toplevel;
           toplevel-light = self.nixosConfigurations."snapos${a}-light".config.system.build.toplevel;
           default = p.snapos-tools;

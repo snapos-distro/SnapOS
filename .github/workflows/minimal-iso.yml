@@ -1,0 +1,140 @@
+name: Minimal ISO
+
+# Builds the SnapOS minimal USB and builds a system by hand from it, typing
+# the handbook's commands on its serial console: partition, format, mount,
+# generate the hardware file, write flake.nix and configuration.nix (the
+# handbook's own files, with the SnapOS packs), nixos-install. Then the new
+# system must reach its login prompt, and the packs must work after login.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "nix/minimal.nix", "nix/packs/**", "nix/pkgs/snapos-nix-tools.nix", "docs/handbook/**", ".github/workflows/minimal-iso.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  minimal:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (flakes)
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Free up disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Build the minimal ISO
+        run: |
+          nix build .#iso-minimal -L --print-out-paths | tail -1
+          cp result/iso/*.iso snapos-minimal.iso
+          ls -lh snapos-minimal.iso
+      - name: Install SnapOS by hand, as the handbook says
+        run: |
+          sudo chmod 666 /dev/kvm
+          fw=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#OVMF.fd | tail -1)/FV/OVMF.fd
+          q() { nix --extra-experimental-features 'nix-command flakes' shell --inputs-from . nixpkgs#qemu --command "$@"; }
+          q qemu-img create -f qcow2 disk.qcow2 20G
+          q qemu-system-x86_64 -enable-kvm -m 4096 -smp 2 -bios "$fw" \
+            -drive file=disk.qcow2,if=virtio -cdrom snapos-minimal.iso -boot d \
+            -nic user,model=virtio-net-pci -display none \
+            -serial unix:serial.sock,server,nowait -monitor unix:mon.sock,server,nowait &
+          qemu=$!
+          python3 - <<'PY'
+          import socket, time, sys
+          s = socket.socket(socket.AF_UNIX)
+          for _ in range(60):
+              try: s.connect("serial.sock"); break
+              except OSError: time.sleep(1)
+          buf = b""
+          log = open("install.log", "wb")
+          def read_until(token, timeout):
+              global buf
+              end = time.time() + timeout
+              s.settimeout(5)
+              while token.encode() not in buf:
+                  if time.time() > end:
+                      sys.stdout.write(buf[-3000:].decode(errors="replace")); raise SystemExit("timed out waiting for " + token)
+                  try: d = s.recv(65536)
+                  except socket.timeout: continue
+                  if not d: raise SystemExit("serial closed")
+                  log.write(d); log.flush(); buf += d
+              i = buf.index(token.encode()); out = buf[:i]; buf = buf[i + len(token):]
+              return out.decode(errors="replace")
+          n = [0]
+          def run(cmd, timeout=600):
+              n[0] += 1
+              tag = "@@STEP%d" % n[0]
+              print("$ " + cmd, flush=True)
+              # the quotes keep the echoed command line from matching the tag
+              s.sendall((cmd + '; echo @@STEP""%d=$?\n' % n[0]).encode())
+              read_until(tag + "=", timeout)
+              rc = read_until("\n", 30).strip()
+              print("  -> exit " + rc, flush=True)
+              if rc != "0": sys.stdout.write(buf.decode(errors="replace")[-2000:]); raise SystemExit("step failed: " + cmd)
+          read_until("(automatic login)", 900)        # the live system is up, logged in
+          time.sleep(20)
+          s.sendall(b'echo READ""Y\n'); read_until("READY", 120)
+          run("lsblk")
+          run("sudo parted -s /dev/vda -- mklabel gpt mkpart ESP fat32 1MiB 512MiB set 1 esp on mkpart root ext4 512MiB 100%")
+          run("sudo mkfs.fat -F 32 -n boot /dev/vda1 && sudo mkfs.ext4 -F -L nixos /dev/vda2")
+          run("sudo mount /dev/vda2 /mnt && sudo mkdir -p /mnt/boot && sudo mount -o umask=077 /dev/vda1 /mnt/boot")
+          run("sudo snapos-generate-config --root /mnt && ls -la /mnt/etc/nixos /mnt/etc/snapos")
+          run("sudo cp /etc/snapos-src/docs/handbook/flake.nix /etc/snapos-src/docs/handbook/configuration.nix /mnt/etc/snapos/")
+          # only for this test: the packs of this very commit, which is not on GitHub's SnapOS yet
+          run("sudo cp -rL /etc/snapos-src /mnt/etc/snapos/snapos && sudo chmod -R u+w /mnt/etc/snapos/snapos && sudo sed -i 's|github:snapos-distro/SnapOS|path:./snapos|' /mnt/etc/snapos/flake.nix")
+          run("sudo sed -i 's|^  system.stateVersion|  boot.kernelParams = [ \"console=ttyS0,115200\" ];\\n  system.stateVersion|' /mnt/etc/snapos/configuration.nix && grep -n 'snapos\\|kernelParams' /mnt/etc/snapos/*.nix")
+          run("sudo snapos-install --flake /mnt/etc/snapos#mypc --no-root-passwd", timeout=7200)
+          run("echo ana:snapos | sudo snapos-enter --root /mnt -c chpasswd")
+          run("sudo umount -R /mnt && sync")
+          print("installed", flush=True)
+          PY
+          pkill -f 'qemu-system-x86_64.*disk.qcow2' || true; while pgrep -f 'qemu-system-x86_64.*disk.qcow2' >/dev/null; do sleep 1; done
+          echo "== booting the installed system and using the packs"
+          q qemu-system-x86_64 -enable-kvm -m 4096 -smp 2 -bios "$fw" -drive file=disk.qcow2,if=virtio \
+            -nic user,model=virtio-net-pci -display none -serial unix:serial2.sock,server,nowait -monitor unix:mon2.sock,server,nowait &
+          qemu=$!
+          python3 - <<'PY'
+          import socket, time, sys
+          s = socket.socket(socket.AF_UNIX)
+          for _ in range(60):
+              try: s.connect("serial2.sock"); break
+              except OSError: time.sleep(1)
+          log = open("boot2.log", "wb"); buf = b""
+          def read_until(token, timeout):
+              global buf
+              end = time.time() + timeout; s.settimeout(5)
+              while token.encode() not in buf:
+                  if time.time() > end:
+                      sys.stdout.write(buf[-3000:].decode(errors="replace")); raise SystemExit("timed out waiting for " + token)
+                  try: d = s.recv(65536)
+                  except socket.timeout: continue
+                  log.write(d); log.flush(); buf += d
+              i = buf.index(token.encode()); out = buf[:i]; buf = buf[i + len(token):]; return out.decode(errors="replace")
+          read_until("mypc login:", 900); print("login prompt", flush=True)
+          time.sleep(3); s.sendall(b"ana\n")
+          end = time.time() + 60                     # "Password:" or "Senha:" (the handbook's file is pt_BR)
+          while b"assword:" not in buf and b"enha:" not in buf and time.time() < end:
+              try: buf += s.recv(65536)
+              except socket.timeout: pass
+          buf = b""; s.sendall(b"snapos\n")
+          time.sleep(8)
+          for n, cmd in enumerate(["snapos version", "snapos list", "snapguard status; true", "snap-deb status; true", "cat /etc/snapos/appearance", "test -L /etc/nixos && ls /etc/snapos/flake.nix", "systemctl is-enabled snapos-update-guard", "snapos list | grep -q firefox"]):
+              s.sendall(('%s; echo @@C""%d=$?\n' % (cmd, n)).encode())
+              out = read_until("@@C%d=" % n, 120); rc = read_until("\n", 10).strip()
+              print("$ " + cmd + "  -> exit " + rc + "\n" + out[-600:], flush=True)
+              if rc != "0": raise SystemExit("failed: " + cmd)
+          PY
+          pkill -f 'qemu-system-x86_64.*disk.qcow2' || true; while pgrep -f 'qemu-system-x86_64.*disk.qcow2' >/dev/null; do sleep 1; done
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimal-install
+          path: |
+            install.log
+            boot2.log
+            installed.ppm
+          if-no-files-found: ignore

@@ -72,6 +72,16 @@ PT[look_light]="Claro"
 EN[r_look]="Appearance"
 PT[r_look]="Aparencia"
 EN[s_review]="Review"
+EN[r_ver]="Version"
+PT[r_ver]="Versao"
+EN[src_usb]="from this USB stick"
+PT[src_usb]="deste pendrive"
+EN[src_net]="newest, downloaded"
+PT[src_net]="mais nova, baixada"
+EN[src_get]="Downloading SnapOS @1, the newest version..."
+PT[src_get]="Baixando o SnapOS @1, a versao mais nova..."
+EN[src_bad]="The download failed or did not match its checksum; installing the version on this USB stick."
+PT[src_bad]="O download falhou ou nao bateu com o checksum; instalando a versao deste pendrive."
 PT[s_review]="Revisao"
 EN[s_install]="Installing"
 PT[s_install]="Instalando"
@@ -295,7 +305,7 @@ load_answers() {
         while IFS= read -r line || [ -n "$line" ]; do
             k="${line%%=*}"; v="${line#*=}"
             case "$k" in
-                LANG|KEYMAP|LOCALE|TIMEZONE|DISK|USERNAME|PASSWORD|HOSTNAME|DESKTOP|LOOK|GRAPHICS) printf -v "A_$k" '%s' "$v" ;;
+                LANG|KEYMAP|LOCALE|TIMEZONE|DISK|USERNAME|PASSWORD|HOSTNAME|DESKTOP|LOOK|GRAPHICS|SOURCE) printf -v "A_$k" '%s' "$v" ;;
             esac
         done < "$f"
         UNATTENDED=1
@@ -420,7 +430,45 @@ keep_network() {
 link_nixos() {
     rm -rf /mnt/etc/nixos
     ln -s snapos /mnt/etc/nixos
-    cp /etc/snapos-build /mnt/etc/snapos/release 2>/dev/null || true
+    if [ -n "$SRC_RELEASE" ]; then
+        printf '%s\n%s\n%s\n' "$(sed -n 's/^commit=//p' "$SRC_RELEASE")" "$(sed -n 's/^date=//p' "$SRC_RELEASE")" \
+            "$(sed -n 's/^name=//p' "$SRC_RELEASE")" > /mnt/etc/snapos/release
+    else
+        cp /etc/snapos-build /mnt/etc/snapos/release 2>/dev/null || true
+    fi
+}
+
+# Net install: with the internet up, the newest SnapOS from snapos-updates is
+# installed instead of the one on this USB stick, when it is newer and its
+# checksum matches. Anything else keeps the version on the stick.
+SRC=/etc/snapos-src
+SRC_LABEL=""
+SRC_RELEASE=""
+fetch_latest() {
+    local web d latest mine
+    SRC=/etc/snapos-src
+    mine="$(cat /etc/snapos-src/VERSION 2>/dev/null)"
+    SRC_LABEL="SnapOS $mine ($(t src_usb))"
+    [ "${A_SOURCE:-latest}" = bundled ] && return 0
+    web="${SNAPOS_UPDATE_WEB:-https://github.com/snapos-distro/snapos-updates}"
+    d="$(mktemp -d)"
+    curl -fsSL -m 30 -o "$d/release.txt" "$web/releases/latest/download/snapos-release.txt" 2>/dev/null || return 0
+    latest="$(sed -n 's/^version=//p' "$d/release.txt")"
+    [ -n "$latest" ] && [ "$latest" != "$mine" ] || return 0
+    [ "$(printf '%s\n%s\n' "$mine" "$latest" | sort -V | tail -1)" = "$latest" ] || return 0
+    say "$(t src_get "$latest")"
+    if ! curl -fsSL -m 600 -o "$d/snapos-source.tar.gz" "$web/releases/latest/download/snapos-source.tar.gz" 2>/dev/null ||
+       ! curl -fsSL -m 60 -o "$d/snapos-source.tar.gz.sha256" "$web/releases/latest/download/snapos-source.tar.gz.sha256" 2>/dev/null ||
+       ! (cd "$d" && sha256sum -c --status snapos-source.tar.gz.sha256); then
+        warn "$(t src_bad)"; return 0
+    fi
+    mkdir -p "$d/src"
+    if ! tar -xzf "$d/snapos-source.tar.gz" -C "$d/src" --strip-components=1 || [ ! -e "$d/src/VERSION" ]; then
+        warn "$(t src_bad)"; return 0
+    fi
+    SRC="$d/src"
+    SRC_RELEASE="$d/release.txt"
+    SRC_LABEL="SnapOS $latest ($(t src_net))"
 }
 
 write_graphics() {
@@ -450,7 +498,8 @@ update_system() {
         [ -e "/mnt/etc/snapos/$f" ] && cp -a "/mnt/etc/snapos/$f" "/tmp/snapos-keep/$f"
     done
     [ -e /mnt/etc/snapos/configuration.nix ] && cp -a /mnt/etc/snapos/configuration.nix /mnt/etc/snapos/configuration.nix.bak
-    cp -a /etc/snapos-src/. /mnt/etc/snapos/
+    cp -a "$SRC"/. /mnt/etc/snapos/
+chmod -R u+w /mnt/etc/snapos
     for f in hardware-configuration.nix local.nix; do
         [ -e "/tmp/snapos-keep/$f" ] && cp -a "/tmp/snapos-keep/$f" "/mnt/etc/snapos/$f"
     done
@@ -711,6 +760,7 @@ choose_appearance
 step 9 s_gfx
 choose_graphics
 
+fetch_latest
 step 10 s_review
 header
 printf '  %-12s %s\n' "$(t r_kb)" "$KEYMAP"
@@ -722,6 +772,7 @@ printf '  %-12s %s\n' "$(t r_host)" "$HOSTNAME"
 printf '  %-12s %s\n' "$(t r_desk)" "$DESKLABEL"
 printf '  %-12s %s\n' "$(t r_look)" "$LOOKLABEL"
 printf '  %-12s %s\n' "$(t r_gfx)" "$GFXLABEL"
+printf '  %-12s %s\n' "$(t r_ver)" "$SRC_LABEL"
 printf '\n  %s%s%s\n\n' "$ACC" "$(t erase)" "$RST"
 printf '  %s' "$(t save)"
 if [ "$UNATTENDED" = 1 ]; then CONFIRM=SAVE; printf 'SAVE\n'; else read -r CONFIRM; fi
@@ -784,7 +835,8 @@ nixos-generate-config --root /mnt || die "$(t f_hw)"
 say "$(t i_copy)..."
 mkdir -p /mnt/etc/snapos
 mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/snapos/
-cp -a /etc/snapos-src/. /mnt/etc/snapos/
+cp -a "$SRC"/. /mnt/etc/snapos/
+chmod -R u+w /mnt/etc/snapos
 link_nixos
 
 # The console keymap has a graphical counterpart (X and Wayland layouts).

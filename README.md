@@ -13,7 +13,9 @@
   <a href="#install">Install</a> ·
   <a href="#coming-from-a-debian-based-distro">Coming from a Debian-based distro</a> ·
   <a href="#every-command">Commands</a> ·
-  <a href="#learning-nixos-from-here">Learn NixOS</a>
+  <a href="#learning-nixos-from-here">Learn NixOS</a> ·
+  <a href="https://snapos-distro.github.io">Website</a> ·
+  <a href="https://snapos-distro.github.io/handbook/">Handbook</a>
 </p>
 
 <br>
@@ -120,15 +122,26 @@ rebuild: it is gone, with nothing left behind.
 
 **Three steps:**
 
-1. **Download** the ISO from the Releases page.
+1. **Download** the universal image from the
+   [Releases page](https://github.com/snapos-distro/SnapOS/releases/latest).
 
-   | Your computer | File |
-   | --- | --- |
-   | A PC (x86_64, BIOS or UEFI) | `snapos-installer.iso` |
-   | An ARM64 computer (UEFI) | `snapos-installer-aarch64.iso` |
+   | Your computer | Universal (installer) | Manual (minimal) |
+   | --- | --- | --- |
+   | A PC (x86_64, BIOS or UEFI) | `snapos-installer.iso` | `snapos-minimal.iso` |
+   | An ARM64 computer (UEFI) | `snapos-installer-aarch64.iso` | `snapos-minimal-aarch64.iso` |
 
 2. **Flash** it to a USB drive with [balenaEtcher](https://etcher.balena.io).
 3. **Boot** from the USB drive. The installer starts by itself.
+
+**Net install.** With the internet up, the installer downloads the newest
+SnapOS from [snapos-updates](https://github.com/snapos-distro/snapos-updates),
+checks it, and installs it, so an older USB stick still installs the latest
+version. Without the internet it installs the version on the stick. The review
+screen shows which one.
+
+**Building it yourself instead?** The manual (minimal) image is a terminal: you write
+your own NixOS system and add the SnapOS packs you want. The
+[handbook](https://snapos-distro.github.io/handbook/) shows every step.
 
 The installer asks eleven things: network, keyboard, language, time zone, disk,
 account, desktop, look (dark or light) and graphics, then shows a review before
@@ -174,7 +187,11 @@ HOSTNAME=snapos
 DESKTOP=budgie
 LOOK=dark
 GRAPHICS=auto
+SOURCE=latest
 ```
+
+`SOURCE=latest` (the default) installs the newest SnapOS when the internet is
+up; `SOURCE=bundled` installs the version on the USB stick.
 
 </details>
 
@@ -489,9 +506,10 @@ snap-deb status                 # the layer: Debian version, packages, tools
   service (a VPN, Docker, a driver) is installed, but its service does not
   start inside the layer; SnapOS tells you so. For those, `snapos find` usually
   has the native version.
-- **It is not a sandbox.** The layer is native: a program in it can do what it
-  could do on Debian. The protection is SnapGuard, which scans every `.deb`
-  before it is installed.
+- **No sandbox, on purpose.** `.deb` programs run natively in the layer, like
+  on a real Debian computer, which is why Steam just works. Install the `.deb`
+  files you would trust on Debian or Ubuntu. SnapGuard scans every package
+  before it is installed, as an extra check, not as a wall around it.
 - On an ARM64 computer the layer takes `arm64` packages. On a PC it takes
   64-bit and 32-bit packages, so programs like **Steam** work: its libraries
   are installed together with it.

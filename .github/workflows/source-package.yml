@@ -1,0 +1,39 @@
+name: Source package
+
+# Only the files `snapos update` needs, in seconds: the source package of a
+# commit, its checksum and the release file. No ISO is built.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to package (e.g. release-2.5.2)"
+        required: true
+      tag:
+        description: "Draft release to put the files in (e.g. src-2.5.2)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Make the update files
+        run: |
+          sha=$(git rev-parse HEAD)
+          git archive --format=tar.gz --prefix=snapos/ -o snapos-source.tar.gz "$sha"
+          sha256sum snapos-source.tar.gz > snapos-source.tar.gz.sha256
+          printf 'commit=%s\nversion=%s\nname=SnapOS installer V%s\ndate=%s\n' \
+            "$sha" "$(cat VERSION)" "$(cat VERSION)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > snapos-release.txt
+          cat snapos-release.txt
+          gh release create "${{ inputs.tag }}" --draft --target "$sha" \
+            --title "SnapOS update files $(cat VERSION)" --notes "Source package of ${sha::7} for snapos update." \
+            snapos-source.tar.gz snapos-source.tar.gz.sha256 snapos-release.txt

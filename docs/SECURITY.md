@@ -49,9 +49,9 @@ devices and D-Bus sockets. The layer is a native layer, not a sandbox: a
 program in it can do what it could do on a Debian computer, and installing a
 `.deb` runs its maintainer scripts as root with every capability, as on
 Debian. A package that brings a system service is installed too; the service
-itself does not start inside the layer, and the user is told so. The one
-protection is SnapGuard, which scans every `.deb` before it is declared: a
-threat goes to quarantine and is never installed. The layer itself is created with Debian's
+itself does not start inside the layer, and the user is told so. SnapGuard scans every `.deb` before it is declared, as an extra check (a
+known threat goes to quarantine and is never installed); it does not isolate
+the program. The layer itself is created with Debian's
 `debootstrap` against Debian's archive keys, which SnapOS ships in
 `/etc/snapos/debian-archive-keyring.gpg` (from the `debian-archive-keyring`
 package; without it no layer is created), and packages are

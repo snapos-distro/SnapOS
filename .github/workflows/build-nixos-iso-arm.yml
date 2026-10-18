@@ -51,6 +51,11 @@ jobs:
           nix --extra-experimental-features 'nix-command flakes' build .#iso -L
           ls -lh result/iso/*.iso
 
+      - name: Build the minimal ISO (aarch64)
+        run: |
+          nix --extra-experimental-features 'nix-command flakes' build .#iso-minimal -L -o minimal
+          ls -lh minimal/iso/*.iso
+
       # The image is booted by UEFI in QEMU on the runner itself, until the
       # installer prints its first screen on the serial console.
       - name: Boot the image in QEMU (UEFI)
@@ -87,7 +92,7 @@ jobs:
           fwdir=$(nix --extra-experimental-features 'nix-command flakes' build --inputs-from . nixpkgs#OVMF.fd --no-link --print-out-paths | head -1)
           fw="$fwdir/FV/QEMU_EFI.fd"
           mkdir -p answers
-          printf 'LANG=en\nKEYMAP=us\nLOCALE=en_US.UTF-8\nTIMEZONE=UTC\nDISK=vda\nUSERNAME=tester\nPASSWORD=tester\nHOSTNAME=snapos\nDESKTOP=budgie\nLOOK=dark\nGRAPHICS=auto\n' > answers/snapos-answers.env
+          printf 'LANG=en\nKEYMAP=us\nLOCALE=en_US.UTF-8\nTIMEZONE=UTC\nDISK=vda\nUSERNAME=tester\nPASSWORD=tester\nHOSTNAME=snapos\nDESKTOP=budgie\nLOOK=dark\nGRAPHICS=auto\nSOURCE=bundled\n' > answers/snapos-answers.env
           nix --extra-experimental-features 'nix-command flakes' shell --inputs-from . nixpkgs#xorriso --command \
             xorriso -as mkisofs -quiet -V SNAPOS_ANSWERS -o answers.iso answers
           nix --extra-experimental-features 'nix-command flakes' shell --inputs-from . nixpkgs#qemu --command qemu-img create -f qcow2 disk.qcow2 16G
@@ -163,6 +168,8 @@ jobs:
         run: |
           cp result/iso/*.iso snapos-installer-aarch64.iso
           sha256sum snapos-installer-aarch64.iso > snapos-installer-aarch64.iso.sha256
+          cp minimal/iso/*.iso snapos-minimal-aarch64.iso
+          sha256sum snapos-minimal-aarch64.iso > snapos-minimal-aarch64.iso.sha256
           # the source package that `snapos update` installs, with its checksum
           git archive --format=tar.gz --prefix=snapos/ -o snapos-source.tar.gz "$GITHUB_SHA"
           sha256sum snapos-source.tar.gz > snapos-source.tar.gz.sha256
@@ -173,4 +180,4 @@ jobs:
           gh release create "$tag" --draft --target "$GITHUB_SHA" \
             --title "SnapOS installer ARM64 ${GITHUB_SHA::7}" \
             --notes "Draft. Built by run #${{ github.run_number }} from commit ${GITHUB_SHA::7}. Flash with balenaEtcher." \
-            snapos-installer-aarch64.iso snapos-installer-aarch64.iso.sha256 snapos-source.tar.gz snapos-source.tar.gz.sha256 snapos-release.txt
+            snapos-installer-aarch64.iso snapos-installer-aarch64.iso.sha256 snapos-minimal-aarch64.iso snapos-minimal-aarch64.iso.sha256 snapos-source.tar.gz snapos-source.tar.gz.sha256 snapos-release.txt

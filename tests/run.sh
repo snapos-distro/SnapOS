@@ -4,6 +4,9 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/bin"
 TMP="$(mktemp -d)"
+# the full SnapOS module and its packs, read as one
+MODS="$TMP/modules.nix"
+cat "$ROOT/nix/modules/snapos.nix" "$ROOT"/nix/packs/*.nix > "$MODS"
 trap 'rm -rf "$TMP"' EXIT
 PASS=0
 FAIL=0
@@ -148,8 +151,8 @@ kill $WPID 2>/dev/null; wait $WPID 2>/dev/null || true
 check "stopping it removes the pid file" bash -c "[ ! -e '$W/rt/snapguard-watch.pid' ]"
 out="$(XDG_RUNTIME_DIR="$W/rt" "$G" status 2>&1)"
 check "status shows real-time off when it is not running" bash -c "printf '%s' \"\$1\" | grep -q 'real-time     : .*off'" _ "$out"
-check "the watcher starts at login" grep -q 'Exec=snapguard-watch' "$ROOT/nix/modules/snapos.nix"
-check "the desktop can show notifications" grep -q 'pkgs.libnotify' "$ROOT/nix/modules/snapos.nix"
+check "the watcher starts at login" grep -q 'Exec=snapguard-watch' "$MODS"
+check "the desktop can show notifications" grep -q 'pkgs.libnotify' "$MODS"
 
 section "snapguard and ClamAV (stand-in scanners)"
 CL="$TMP/clam"
@@ -312,9 +315,9 @@ rm -f "$SNAPOS_NIX_DIR/debs/hello-snap_1.0_amd64.deb"
 check "list marks a removed file as gone" bash -c "! '$D' list | grep -q hello-snap"
 unset SNAPDEB_DIR SNAPOS_NIX_DIR
 check "snapos rebuild syncs the Debian layer" grep -q '"snap-deb", "sync"' "$ROOT/src/snapos.c"
-check "the module exports the layer to the menu" grep -q 'debLayer}/exports/share' "$ROOT/nix/modules/snapos.nix"
-check "the module ships bubblewrap and debootstrap" bash -c "grep -q 'pkgs.bubblewrap' '$ROOT/nix/modules/snapos.nix' && grep -q 'pkgs.debootstrap' '$ROOT/nix/modules/snapos.nix'"
-check "the Debian archive keyring is shipped" bash -c "[ -s '$ROOT/security/debian-archive-keyring.gpg' ] && grep -q 'debian-archive-keyring.gpg' '$ROOT/nix/modules/snapos.nix'"
+check "the module exports the layer to the menu" grep -q 'debLayer}/exports/share' "$MODS"
+check "the module ships bubblewrap and debootstrap" bash -c "grep -q 'pkgs.bubblewrap' '$MODS' && grep -q 'pkgs.debootstrap' '$MODS'"
+check "the Debian archive keyring is shipped" bash -c "[ -s '$ROOT/security/debian-archive-keyring.gpg' ] && grep -q 'debian-archive-keyring.gpg' '$MODS'"
 check "the layer is created only from a verified archive" grep -q -- '--keyring=' "$ROOT/src/snap-deb.c"
 check "the layer is native: install scripts run with every power, as on Debian" bash -c "grep -q '\"--cap-add\"; argv\[k++\] = \"ALL\"' '$ROOT/src/snap-deb.c' && ! grep -q -- '--unshare-pid' '$ROOT/src/snap-deb.c'"
 check "every .deb is scanned by SnapGuard before it reaches the layer" bash -c "grep -q 'snapguard' '$ROOT/src/snap-deb.c'"
@@ -404,7 +407,18 @@ if [ "$(id -u)" -ne 0 ]; then
     check "and leaves nothing behind" bash -c "[ -z \"\$(ls -A '$U/run')\" ]"
     chmod 755 "$U/locked" "$U/locked/work"
 fi
-check "the state folder can be read by the login check" bash -c "grep -q 'd /var/lib/snapos 0755' '$ROOT/nix/modules/snapos.nix' && grep -q 'd /var/lib/snapos/quarantine 0700' '$ROOT/nix/modules/snapos.nix'"
+# a system built by hand: its own flake in /etc/nixos, the packs as an input
+H="$TMP/byhand"; mkdir -p "$H/sys" "$H/state" "$H/web/releases/latest/download"
+printf '{ }\n' > "$H/sys/flake.nix"
+printf '{\n  "nodes": {\n    "snapos": {\n      "locked": {\n        "lastModified": 1700000000,\n        "rev": "1111111111111111111111111111111111111111"\n      },\n      "original": { "owner": "snapos-distro" }\n    }\n  }\n}\n' > "$H/sys/flake.lock"
+printf 'commit=2222222222222222222222222222222222222222\nversion=9.9\nname=SnapOS installer V9.9\n' > "$H/web/releases/latest/download/snapos-release.txt"
+hb() { env PATH="$U/bin:$PATH" SNAPOS_NIX_DIR="$H/sys" SNAPOS_STATE_DIR="$H/state" SNAPOS_UPDATE_WEB="file://$H/web" SNAPOS_UPDATE_API="file://$H/noapi" SNAPOS_OS_RELEASE="$U/os-release" "$BIN/snapos" "$@"; }
+hb update check >/dev/null 2>&1
+check_eq "a system built by hand sees a newer SnapOS release of its packs" "10" "$?"
+sed -i 's/1111111111111111111111111111111111111111/2222222222222222222222222222222222222222/' "$H/sys/flake.lock"
+hb update check >/dev/null 2>&1
+check_eq "and is current when its packs are the latest" "0" "$?"
+check "the state folder can be read by the login check" bash -c "grep -q 'd /var/lib/snapos 0755' '$MODS' && grep -q 'd /var/lib/snapos/quarantine 0700' '$MODS'"
 check "snapupdate opens the terminal the desktop has" bash -c "for t in gnome-terminal konsole xfce4-terminal kitty; do grep -q \"\\\"\$t\\\"\" '$ROOT/src/snapupdate.c' || exit 1; done"
 check "snapupdate keeps asking during the day" grep -q 'SNAPUPDATE_EVERY' "$ROOT/src/snapupdate.c"
 out="$(up version 2>&1)"
@@ -489,17 +503,17 @@ printf 'previous=42\nattempts=1\nname=V2.1\n' > "$U/state/update-pending"
 up guard boot >/dev/null 2>&1
 check "a second boot without approval rolls back at once" bash -c "grep -q 'switch-generation 42' '$U/calls' && [ -e '$U/state/update-rolled-back' ]"
 check "the updater keeps its downloads out of /tmp" bash -c "! grep -q '\"/tmp/' '$ROOT/src/snapos.c' && [ -d '$U/state/work' ]"
-check "the guard runs at boot and after the desktop" bash -c "grep -q 'snapos guard boot' '$ROOT/nix/modules/snapos.nix' && grep -q 'snapos guard approve' '$ROOT/nix/modules/snapos.nix'"
+check "the guard runs at boot and after the desktop" bash -c "grep -q 'snapos guard boot' '$MODS' && grep -q 'snapos guard approve' '$MODS'"
 check "CI attaches the source package and its checksum to the release" bash -c "grep -q 'snapos-source.tar.gz.sha256' '$ROOT/.github/workflows/build-nixos-iso.yml'"
 check "snapupdate keeps the terminal open and logs the update" bash -c "grep -q 'read -r -p' '$ROOT/src/snapupdate.c' && grep -q 'update.log' '$ROOT/src/snapupdate.c'"
 check "snapupdate tells the user when an update was undone" grep -q 'update-rolled-back' "$ROOT/src/snapupdate.c"
-check "snapupdate runs at every login" grep -q 'Exec=snapupdate --autostart' "$ROOT/nix/modules/snapos.nix"
+check "snapupdate runs at every login" grep -q 'Exec=snapupdate --autostart' "$MODS"
 check "snapupdate is built with SnapHelper" bash -c "grep -q 'bin/snapupdate' '$ROOT/nix/pkgs/snaphelper.nix' && grep -q 'snapupdate' '$ROOT/Makefile'"
 check "snapupdate is in the menu" grep -q '^Exec=snapupdate$' "$ROOT/branding/snapupdate.desktop"
 
 section "version"
 check "the repository has a VERSION file" bash -c "grep -qE '^[0-9]+(\.[0-9]+)+$' '$ROOT/VERSION'"
-check "os-release names the SnapOS version" bash -c "grep -q 'PRETTY_NAME=\"SnapOS \${snaposVersion}' '$ROOT/nix/modules/snapos.nix' && grep -q 'ID_LIKE=nixos' '$ROOT/nix/modules/snapos.nix'"
+check "os-release names the SnapOS version" bash -c "grep -q 'PRETTY_NAME=\"SnapOS \${snaposVersion}' '$MODS' && grep -q 'ID_LIKE=nixos' '$MODS'"
 
 section "/etc/snapos"
 INSTALLER="$ROOT/nix/installer/snap-install-nixos.sh"
@@ -569,9 +583,9 @@ sc gc --all >/dev/null 2>&1
 check "gc --all keeps only the current system" grep -q 'GC -d' "$C/calls"
 out="$("$BIN/snapos" help 2>&1)"
 check "help maps the apt habits" bash -c "printf '%s' \"\$1\" | grep -q 'apt install X *-> *snapos add X' && printf '%s' \"\$1\" | grep -q 'apt autoremove *-> *snapos gc'" _ "$out"
-check "nix-env installs are caught with an explanation" bash -c "grep -q 'nix-env()' '$ROOT/nix/modules/snapos.nix' && grep -q 'snapos add' '$ROOT/nix/modules/snapos.nix'"
+check "nix-env installs are caught with an explanation" bash -c "grep -q 'nix-env()' '$MODS' && grep -q 'snapos add' '$MODS'"
 check "the flake offers its package set to find, shell and try" grep -q 'legacyPackages = forAll mkPkgs' "$ROOT/flake.nix"
-check "old systems are cleaned every week" grep -q 'delete-older-than 14d' "$ROOT/nix/modules/snapos.nix"
+check "old systems are cleaned every week" grep -q 'delete-older-than 14d' "$MODS"
 
 section "README"
 check "every picture the README shows exists" bash -c "for f in \$(grep -o 'src=\"[^\"]*\"' '$ROOT/README.md' | cut -d'\"' -f2); do [ -f '$ROOT/'\$f ] || { echo missing \$f; exit 1; }; done"
@@ -623,10 +637,30 @@ printf 'changed\n' > "$P/sys/marker"
 pk guard boot >/dev/null 2>&1
 check "a package update that does not start is undone, files and all" bash -c "[ ! -e '$P/sys/marker' ] && [ ! -e '$P/state/update-pending' ] && [ -e '$P/state/update-rolled-back' ]"
 check "the login window knows about package updates" bash -c "grep -q 'Package updates are ready' '$ROOT/src/snapupdate.c' && grep -q 'code == 12' '$ROOT/src/snapupdate.c'"
-check "on ARM64 the system is named SnapOS ... ARM" bash -c "grep -q 'isAarch64 \" ARM\"' '$ROOT/nix/modules/snapos.nix' && grep -q 'VARIANT_ID=arm64' '$ROOT/nix/modules/snapos.nix'"
+check "on ARM64 the system is named SnapOS ... ARM" bash -c "grep -q 'isAarch64 \" ARM\"' '$MODS' && grep -q 'VARIANT_ID=arm64' '$MODS'"
 
 section "releases"
 check "SnapGuard has the cup, the virus and its animations" bash -c "grep -q 'ANIM_ARRIVE' '$ROOT/src/snapguard-gui.c' && grep -q 'ANIM_EAT' '$ROOT/src/snapguard-gui.c' && grep -q 'ANIM_TRUST' '$ROOT/src/snapguard-gui.c' && grep -q 'VIRUS_ART' '$ROOT/src/snapguard-gui.c'"
+check "the minimal USB is a terminal with the packs and the handbook" bash -c "grep -q 'snapos-minimal' '$ROOT/flake.nix' && grep -q 'snapos-distro.github.io' '$ROOT/nix/minimal.nix' && grep -q 'nixosModules.packs' '$ROOT/flake.nix'"
+check "the NixOS tools have SnapOS names and the system lives in /etc/snapos" bash -c "for t in snapos-generate-config snapos-install snapos-enter snapos-rebuild; do grep -q \"\$t\" '$ROOT/nix/pkgs/snapos-nix-tools.nix' || exit 1; done; grep -q 'L /etc/nixos - - - - /etc/snapos' '$ROOT/nix/packs/commands.nix' && grep -q 'etc/snapos/flake.nix' '$ROOT/docs/handbook/flake.nix'"
+check "snapos-install writes the lock file before nixos-install" bash -c "grep -q 'flake lock \"path:\$dir\"' '$ROOT/nix/pkgs/snapos-nix-tools.nix'"
+check "every pack is off on its own and on in the full SnapOS" bash -c "for p in theme desktops commands snapguard snapweb debian helper updater; do grep -q \"\$p.enable\" '$ROOT/nix/packs/default.nix' || exit 1; done; grep -q 'imports = \[ ../packs \]' '$MODS'"
+# net install: the installer takes the newest SnapOS when it is newer and whole
+NI="$TMP/netinst"; mkdir -p "$NI/usb" "$NI/web/releases/latest/download" "$NI/pkg/snapos"
+echo 2.6 > "$NI/usb/VERSION"; echo 2.7 > "$NI/pkg/snapos/VERSION"
+tar -czf "$NI/web/releases/latest/download/snapos-source.tar.gz" -C "$NI/pkg" snapos
+(cd "$NI/web/releases/latest/download" && sha256sum snapos-source.tar.gz > snapos-source.tar.gz.sha256)
+printf 'commit=abc\nversion=2.7\nname=SnapOS installer V2.7\n' > "$NI/web/releases/latest/download/snapos-release.txt"
+netinst() {
+    { printf 't() { printf "%%s" "$1"; }\nsay() { :; }\nwarn() { :; }\n'
+      sed -n '/^SRC=\/etc\/snapos-src$/,/^}$/p' "$ROOT/nix/installer/snap-install-nixos.sh" | sed "s|/etc/snapos-src|$NI/usb|g"
+      printf 'fetch_latest\nprintf "%%s|%%s" "$(cat "$SRC/VERSION")" "$SRC_LABEL"\n'; } > "$NI/run.sh"
+    env SNAPOS_UPDATE_WEB="file://$NI/web" "$@" bash "$NI/run.sh" 2>/dev/null
+}
+check_eq "net install: the newest SnapOS is installed when it is newer" "2.7|SnapOS 2.7 (src_net)" "$(netinst)"
+check_eq "net install: SOURCE=bundled keeps the version on the stick" "2.6|SnapOS 2.6 (src_usb)" "$(netinst A_SOURCE=bundled)"
+echo junk > "$NI/web/releases/latest/download/snapos-source.tar.gz.sha256"
+check_eq "net install: a download that does not match its checksum is not used" "2.6|SnapOS 2.6 (src_usb)" "$(netinst)"
 check "the installer writes everything to disk before it says it is done" bash -c "awk '/^restart\\(\\)/,/^}/' '$ROOT/nix/installer/snap-install-nixos.sh' | awk '/umount -R \\/mnt/{u=NR} /SNAPOS-INSTALL-OK/{o=NR} END{exit !(u && o && u < o)}'"
 check "builds and tests run in the staging repository only" bash -c "for w in desktop-test build-nixos-iso build-nixos-iso-arm snap-deb; do grep -q \"github.repository == 'snapos-distro/snapos-test'\" '$ROOT/.github/workflows/'\$w.yml || exit 1; done"
 check "the official draft is a copy of a tested build of the same commit" bash -c "grep -q 'test \"\$commit\" = \"\$GITHUB_SHA\"' '$ROOT/.github/workflows/draft-release.yml' && grep -q 'sha256sum -c' '$ROOT/.github/workflows/draft-release.yml' && grep -q -- '--draft' '$ROOT/.github/workflows/draft-release.yml'"
@@ -650,10 +684,10 @@ check "an unattended install does not wait at the welcome screen" grep -q '\[ "\
 out="$(SNAPOS_FLAKE_ATTR= env PATH="$U/bin:$PATH" SNAPOS_NIX_DIR="$U/sys" SNAPOS_UPDATE_API="file://$U/api" SNAPOS_UPDATE_WEB="file://$U/web" SNAPOS_OS_RELEASE="$U/os-release" SNAPOS_STATE_DIR="$U/state" SNAPOS_PROFILE="$U/profile/system" SNAPOS_MIN_FREE_MB=1 SNAPOS_NO_REBOOT=1 "$BIN/snapos" update 2>&1)"
 check "the checklist names this computer's architecture" bash -c "printf '%s' \"\$1\" | grep -q 'Architecture: $(uname -m)'" _ "$out"
 check "the installer links /etc/nixos and records the release" bash -c "grep -q 'ln -s snapos /mnt/etc/nixos' '$INSTALLER' && grep -q 'snapos-build /mnt/etc/snapos/release' '$INSTALLER'"
-check "the module links /etc/nixos to /etc/snapos" grep -q '"L /etc/nixos - - - - /etc/snapos"' "$ROOT/nix/modules/snapos.nix"
+check "the module links /etc/nixos to /etc/snapos" grep -q '"L /etc/nixos - - - - /etc/snapos"' "$MODS"
 check "the Debian layer gets Debian's updates" grep -q 'snap-deb upgrade' "$ROOT/src/snap-deb.c"
-check "the clamd socket survives a failed start" grep -q 'RuntimeDirectoryPreserve = "yes"' "$ROOT/nix/modules/snapos.nix"
-check "the boot does not wait for the virus database" bash -c "grep -q 'wants = mkForce \[ \];' '$ROOT/nix/modules/snapos.nix'"
+check "the clamd socket survives a failed start" grep -q 'RuntimeDirectoryPreserve = "yes"' "$MODS"
+check "the boot does not wait for the virus database" bash -c "grep -q 'wants = mkForce \[ \];' '$MODS'"
 
 section "apt"
 out="$("$BIN/apt" install opsec 2>&1)"
@@ -709,7 +743,7 @@ for l in lines:
 "
 check "installer uses the console Snappy" grep -q 'mascot-console.txt' "$INST"
 check "the installer image does not force wpa_supplicant off" bash -c "! grep -q 'networking.wireless.enable = lib.mkForce false' '$ROOT/nix/iso.nix'"
-check "the login screen has no corner logo" bash -c "! grep -q 'logo=' '$ROOT/nix/modules/snapos.nix'"
+check "the login screen has no corner logo" bash -c "! grep -q 'logo=' '$MODS'"
 check "the image ships the red icons and theme prebuilt" bash -c "grep -q 'isoImage.storeContents' '$ROOT/nix/iso.nix' && grep -q 'color = \"red\"' '$ROOT/nix/iso.nix'"
 check "installer asks for the appearance" grep -q '^choose_appearance$' "$INST"
 check "installer keeps the Wi-Fi network for the installed system" bash -c "grep -q '^keep_network()' '$INST' && grep -q 'system-connections' '$INST' && [ \$(grep -cE '^ *keep_network$' '$INST') -eq 2 ]"
@@ -721,8 +755,8 @@ check "installer saves it in local.nix" grep -q 'snapos.appearance = "${LOOK}"' 
 steps="$(grep -oE '^ *step [0-9]+ ' "$INST" | grep -oE '[0-9]+' | sort -n | uniq | tr '\n' ' ')"
 check_eq "installer steps run from 1 to TOTAL" "1 2 3 4 5 6 7 8 9 10 11 " "$steps"
 check_eq "TOTAL matches the last step" "11" "$(sed -n 's/^TOTAL=//p' "$INST")"
-check "no media server shares the user's files on the network" grep -q 'services.gnome.rygel.enable = false' "$ROOT/nix/modules/snapos.nix"
-check "the module has the appearance option" grep -q 'appearance = mkOption' "$ROOT/nix/modules/snapos.nix"
+check "no media server shares the user's files on the network" grep -q 'services.gnome.rygel.enable = false' "$MODS"
+check "the module has the appearance option" grep -q 'appearance = mkOption' "$MODS"
 
 section "desktops"
 D_NIX="$ROOT/nix/modules/desktop.nix"
@@ -739,8 +773,8 @@ check "the light appearance reaches every desktop" bash -c "grep -q 'BreezeLight
 check "a VM test exists for each desktop in both appearances" bash -c "for d in desktop plasma xfce hyprland; do grep -qE \"^  \$d = \\w+ \\\"dark\\\";\" '$ROOT/nix/tests/desktop.nix' && grep -qE \"^  \$d-light = \\w+ \\\"light\\\";\" '$ROOT/nix/tests/desktop.nix' || exit 1; done"
 check "Hyprland tiles its windows, with no title bars and one network icon" bash -c "! grep -q 'hyprbars' '$D_NIX' && ! grep -q '\"network\"' '$D_NIX' && grep -q 'nm-applet --indicator' '$D_NIX'"
 check "Hyprland uses the Adwaita cursor like Budgie" grep -q 'XCURSOR_THEME, Adwaita' "$D_NIX"
-check "NetworkManager is on for every desktop" grep -q 'networking.networkmanager.enable = true;' "$ROOT/nix/modules/snapos.nix"
-check "SnapHelper's files are linked on every desktop" grep -q 'environment.pathsToLink = \[ "/share/snapos" \]' "$ROOT/nix/modules/snapos.nix"
+check "NetworkManager is on for every desktop" grep -q 'networking.networkmanager.enable = true;' "$MODS"
+check "SnapHelper's files are linked on every desktop" grep -q 'environment.pathsToLink = \[ "/share/snapos" \]' "$MODS"
 check "CI runs the four desktops in both appearances" grep -q 'desktop: \[ desktop, desktop-light, plasma, plasma-light, xfce, xfce-light, hyprland, hyprland-light \]' "$ROOT/.github/workflows/desktop-test.yml"
 check "both wallpapers exist" bash -c "[ -f '$ROOT/branding/wallpapers/snapos-default.jpeg' ] && [ -f '$ROOT/branding/wallpapers/snapos-light.jpeg' ]"
 check "both shield icon sets exist" bash -c "[ -f '$ROOT/branding/icons/snapguard-dark-512.png' ] && [ -f '$ROOT/branding/icons/snapguard-light-512.png' ]"
@@ -753,7 +787,7 @@ for g in snappy-declares snappy-deb snappy-defends snappy-appearance snappy-inst
     check "$g.gif exists" test -s "$ROOT/branding/$g.gif"
 done
 check "SnapHelper shows exactly the three animations it installs" bash -c "for g in snappy-declares snappy-deb snappy-defends; do grep -q \"\$g.gif\" '$ROOT/src/snaphelper.c' && grep -q \"\$g\" '$ROOT/nix/pkgs/snaphelper.nix' || exit 1; done; [ \$(grep -o 'snappy-[a-z]*\\.gif' '$ROOT/src/snaphelper.c' | sort -u | wc -l) -eq 3 ]"
-check "SnapHelper opens once at first login" grep -q 'Exec=snaphelper --first-run' "$ROOT/nix/modules/snapos.nix"
+check "SnapHelper opens once at first login" grep -q 'Exec=snaphelper --first-run' "$MODS"
 check "SnapHelper is in the app menu" grep -q 'Exec=snaphelper$' "$ROOT/branding/snaphelper.desktop"
 check "SnapHelper has Next, Back and End" bash -c "grep -q '\"Next\"' '$ROOT/src/snaphelper.c' && grep -q '\"Back\"' '$ROOT/src/snaphelper.c' && grep -q '\"End\"' '$ROOT/src/snaphelper.c'"
 check "SnapHelper answers the arrow keys" bash -c "grep -q GDK_KEY_Left '$ROOT/src/snaphelper.c' && grep -q GDK_KEY_Right '$ROOT/src/snaphelper.c'"
@@ -763,7 +797,7 @@ section "dock, light theme and bookmarks"
 check "the dock starts at 45" grep -q 'size=45' "$ROOT/nix/modules/desktop.nix"
 check "the dock pins the defender, browser, programs and terminal" bash -c "grep -q 'pinned-launchers=\\[\"snapguard.desktop\", \"firefox.desktop\", \"org.gnome.Software.desktop\", \"org.gnome.Terminal.desktop\"\\]' '$ROOT/nix/modules/desktop.nix'"
 check "no media player is pinned" bash -c "! grep -qi 'vlc\\|rhythmbox' '$ROOT/nix/modules/desktop.nix'"
-check "the light theme also has a light dark-variant" grep -q 'gtk-dark.css' "$ROOT/nix/modules/snapos.nix"
+check "the light theme also has a light dark-variant" grep -q 'gtk-dark.css' "$MODS"
 check "SnapWeb starts with no bookmarks" grep -q 'NoDefaultBookmarks = true' "$ROOT/custom-apps/snapweb/default.nix"
 check "SnapGuard has a light palette" grep -q 'light_css' "$ROOT/src/snapguard-gui.c"
 check "SnapHelper has a light palette" grep -q 'light_css' "$ROOT/src/snaphelper.c"
@@ -809,7 +843,7 @@ check "images carry no metadata" test $? -eq 0
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     check "repository text is English (except the installer's Portuguese table)" bash -c "! git -C '$ROOT' grep -qIE '[ãõçáéíóúâêô]' -- . ':!nix/installer/snap-install-nixos.sh' ':!tests/run.sh'"
     check "fastfetch logo uses the color placeholder" grep -q '^\$1' "$ROOT/branding/fastfetch/snapos-logo.txt"
-    check "touchpad typing lock is off by default" grep -q 'disable-while-typing = false' "$ROOT/nix/modules/snapos.nix"
+    check "touchpad typing lock is off by default" grep -q 'disable-while-typing = false' "$MODS"
     check "no personal data in tracked files" bash -c "! git -C '$ROOT' grep -qIiE '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}|/home/[a-z]' -- . ':!tests/run.sh'"
 fi
 

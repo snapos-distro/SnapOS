@@ -328,7 +328,7 @@ in {
     description = "The desktop: Budgie (the default), KDE Plasma, Xfce or Hyprland. Chosen in the installer; change it in local.nix and run snapos rebuild.";
   };
 
-  config = mkMerge [
+  config = mkIf cfg.packs.desktops.enable (mkMerge [
     {
       services.xserver.enable = true;
       services.xserver.displayManager.lightdm.enable = true;
@@ -530,5 +530,5 @@ in {
       # Hyprland is Wayland-only; Firefox and GTK programs run natively on it.
       environment.sessionVariables.NIXOS_OZONE_WL = "1";
     })
-  ];
+  ]);
 }
