@@ -31,7 +31,7 @@ let
     cp ${../../branding/icons}/snapos-48.png $out/menu.png
     cp ${../../branding/icons}/snapguard-${if light then "light" else "dark"}-48.png $out/snapguard.png
     cp ${../../branding/icons}/snapfox-48.png $out/snapweb.png
-    rsvg-convert -w 48 -h 48 ${papirusApps}/org.gnome.Software.svg -o $out/software.png
+    cp ${../../branding/carapace/icons}/carapace-48.png $out/software.png
     rsvg-convert -w 48 -h 48 ${papirusApps}/utilities-terminal.svg -o $out/terminal.png
   '';
   launcher = "wofi --show drun --conf /etc/xdg/wofi/config --style /etc/xdg/wofi/style.css";
@@ -51,6 +51,7 @@ let
     exec-once = snapguard-watch
     exec-once = snapupdate --autostart
     exec-once = snaphelper --first-run
+    exec-once = ${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent
 
     env = XCURSOR_SIZE, 24
     env = XCURSOR_THEME, Adwaita
@@ -165,7 +166,7 @@ let
     "custom/menu" = { format = " "; on-click = launcher; tooltip = false; };
     "custom/snapguard" = { format = " "; on-click = "snapguard-gui"; tooltip = false; };
     "custom/firefox" = { format = " "; on-click = "firefox"; tooltip = false; };
-    "custom/software" = { format = " "; on-click = "gnome-software"; tooltip = false; };
+    "custom/software" = { format = " "; on-click = "carapace"; tooltip = false; };
     "custom/terminal" = { format = " "; on-click = "kitty"; tooltip = false; };
     # (waybar's taskbar module blocks the bar on Hyprland; the title of the
     # focused window takes its place)
@@ -275,7 +276,7 @@ let
         var ws = ps[i].widgets("org.kde.plasma.icontasks");
         for (var j = 0; j < ws.length; j++) {
           ws[j].currentConfigGroup = ["General"];
-          ws[j].writeConfig("launchers", ["applications:snapguard.desktop", "applications:firefox.desktop", "applications:org.gnome.Software.desktop", "applications:org.kde.konsole.desktop"]);
+          ws[j].writeConfig("launchers", ["applications:snapguard.desktop", "applications:firefox.desktop", "applications:carapace.desktop", "applications:org.kde.konsole.desktop"]);
         }
       }' || exit 1
     sleep 5
@@ -357,7 +358,7 @@ in {
       # store and the terminal pinned. (NixOS pins a media player by default.)
       services.desktopManager.budgie.extraGSettingsOverrides = ''
         [com.solus-project.icon-tasklist:Budgie]
-        pinned-launchers=["snapguard.desktop", "firefox.desktop", "org.gnome.Software.desktop", "org.gnome.Terminal.desktop"]
+        pinned-launchers=["snapguard.desktop", "firefox.desktop", "carapace.desktop", "org.gnome.Terminal.desktop"]
 
         [com.solus-project.budgie-panel.panel:Budgie]
         size=45
@@ -371,6 +372,8 @@ in {
     })
 
     (mkIf (desk == "plasma") {
+      # the programs come from Carapace; Discover only knows Flatpak here
+      environment.plasma6.excludePackages = [ pkgs.kdePackages.discover ];
       environment.etc."xdg/kdeglobals".text = ''
         [General]
         ColorScheme=${if light then "BreezeLight" else "BreezeDark"}
@@ -425,7 +428,7 @@ in {
         show-button-icon=true
         launcher-show-description=false
         position-search-alternate=true
-        favorites=snapguard.desktop,firefox.desktop,org.gnome.Software.desktop,xfce4-terminal.desktop
+        favorites=snapguard.desktop,firefox.desktop,carapace.desktop,xfce4-terminal.desktop
       '';
       # The panel the first time a user logs in: one bar at the bottom, 45
       # pixels, with the menu, the SnapOS programs, the open windows, the
@@ -468,7 +471,7 @@ in {
               <property name="items" type="array"><value type="string" value="firefox.desktop"/></property>
             </property>
             <property name="plugin-4" type="string" value="launcher">
-              <property name="items" type="array"><value type="string" value="org.gnome.Software.desktop"/></property>
+              <property name="items" type="array"><value type="string" value="carapace.desktop"/></property>
             </property>
             <property name="plugin-5" type="string" value="launcher">
               <property name="items" type="array"><value type="string" value="xfce4-terminal.desktop"/></property>

@@ -18,6 +18,7 @@
         snapos-tools = final.callPackage ./nix/pkgs/snapos-tools.nix { src = self; };
         snapguard = final.callPackage ./nix/pkgs/snapguard.nix { src = self; };
         snaphelper = final.callPackage ./nix/pkgs/snaphelper.nix { src = self; };
+        carapace = final.callPackage ./nix/pkgs/carapace.nix { src = self; };
         snapos-nix-tools = final.callPackage ./nix/pkgs/snapos-nix-tools.nix { };
         nixos-icons = final.callPackage ./nix/pkgs/snapos-icons.nix { };
         fastfetch = final.symlinkJoin {
@@ -43,7 +44,8 @@
       # SnapOS is built for x86_64 (PCs) and aarch64 (ARM64 computers with UEFI).
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAll = f: nixpkgs.lib.genAttrs systems f;
-      mkPkgs = sys: import nixpkgs { system = sys; overlays = [ snaposOverlay ]; };
+      # every package from nixpkgs, the unfree ones too (Steam, Discord, Spotify...)
+      mkPkgs = sys: import nixpkgs { system = sys; overlays = [ snaposOverlay ]; config.allowUnfree = true; };
       mkSystem = sys: modules: nixpkgs.lib.nixosSystem {
         system = sys;
         specialArgs = { inherit self; };

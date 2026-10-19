@@ -1,0 +1,106 @@
+name: Installer, partitions by hand
+
+# The installer's "choose the partitions myself" mode, on a disk that already
+# holds another system: an EFI partition with a Windows boot file, a data
+# partition with a file, and an empty partition for SnapOS. The installer
+# runs without questions (PARTITIONING=manual) on a UEFI VM. Afterwards the
+# other partitions must be as they were, SnapOS must be on its own partition
+# with GRUB next to Windows' boot file, and the installed system must reach
+# its login prompt.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "nix/installer/**", "nix/iso.nix", ".github/workflows/installer-manual.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  manual:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (flakes)
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Free up disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+      - name: Build the installer ISO
+        run: |
+          nix --extra-experimental-features 'nix-command flakes' build .#iso -L
+          ls -lh result/iso/*.iso
+      - name: A disk with another system on it
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q qemu-system-x86 qemu-utils ovmf xorriso dosfstools e2fsprogs
+          qemu-img create -f raw disk.raw 24G
+          # vda1: EFI (FAT, 260 MiB) with a Windows boot file; vda2: someone's data; vda3: free for SnapOS
+          printf '%s\n' 'label: gpt' 'size=260MiB, type=uefi, name=EFI' 'size=2GiB, type=linux, name=data' 'type=linux, name=snapos' | sfdisk --quiet disk.raw
+          loop=$(sudo losetup --show -fP disk.raw)
+          sudo mkfs.fat -F 32 -n EFI "${loop}p1"
+          sudo mkfs.ext4 -q -L DATA "${loop}p2"
+          mkdir -p m
+          sudo mount "${loop}p1" m && sudo mkdir -p m/EFI/Microsoft/Boot && echo windows | sudo tee m/EFI/Microsoft/Boot/bootmgfw.efi >/dev/null && sudo umount m
+          sudo mount "${loop}p2" m && echo "my files, keep them" | sudo tee m/keep.txt >/dev/null && sudo umount m
+          sudo losetup -d "$loop"
+          sha256sum disk.raw | cut -c1-16
+      - name: Install SnapOS on the third partition, without questions
+        run: |
+          mkdir answers
+          printf '%s\n' LANG=en KEYMAP=us LOCALE=en_US.UTF-8 TIMEZONE=UTC DISK=vda USERNAME=tester PASSWORD=tester HOSTNAME=snapos \
+            DESKTOP=xfce LOOK=dark GRAPHICS=auto SOURCE=bundled PARTITIONING=manual ROOT=vda3 BOOT=vda1 SERIAL=yes > answers/snapos-answers.env
+          xorriso -as mkisofs -quiet -V SNAPOS_ANSWERS -o answers.iso answers
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd vars.fd
+          iso=$(ls result/iso/*.iso | head -1)
+          sudo chmod 666 /dev/kvm
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 4096 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=vars.fd \
+            -drive file=disk.raw,if=virtio,format=raw -cdrom "$iso" -boot d \
+            -device qemu-xhci -drive file=answers.iso,if=none,id=answers,format=raw,readonly=on -device usb-storage,drive=answers \
+            -nic user,model=virtio-net-pci -display none -no-reboot -serial file:install.log -qmp unix:qmp.sock,server,nowait &
+          qemu=$!
+          mkdir -p shots
+          # a picture of the screen every 2 minutes, so a stuck install shows where it stopped
+          shot() { python3 - "$1" <<'PY'
+          import json, socket, sys
+          s = socket.socket(socket.AF_UNIX); s.connect("qmp.sock"); f = s.makefile("rw")
+          f.readline()
+          for c in ({"execute": "qmp_capabilities"}, {"execute": "screendump", "arguments": {"filename": sys.argv[1]}}):
+              f.write(json.dumps(c) + "\n"); f.flush(); f.readline()
+          PY
+          }
+          for i in $(seq -w 1 45); do
+            sleep 120
+            kill -0 $qemu 2>/dev/null || break
+            shot "$PWD/shots/install-$i.ppm" || true
+          done
+          if kill -0 $qemu 2>/dev/null; then kill $qemu; echo "the install did not finish in 90 minutes"; exit 1; fi
+          echo "the installer finished and the VM restarted"
+      - name: The other partitions are as they were
+        run: |
+          loop=$(sudo losetup --show -fP disk.raw)
+          mkdir -p m
+          sudo mount -o ro "${loop}p2" m && cat m/keep.txt && grep -q "my files, keep them" m/keep.txt && sudo umount m
+          sudo mount -o ro "${loop}p1" m && find m -type f | sort && test -f m/EFI/Microsoft/Boot/bootmgfw.efi && ls m/EFI/*/grubx64.efi && sudo umount m
+          sudo mount -o ro "${loop}p3" m && grep -E 'efiSysMountPoint|useOSProber|canTouchEfiVariables' m/etc/snapos/local.nix && test -e m/nix/var/nix/profiles/system && sudo umount m
+          sudo blkid "${loop}p1" "${loop}p2" "${loop}p3"
+          sudo losetup -d "$loop"
+      - name: The installed system starts
+        run: |
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 4096 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=vars.fd \
+            -drive file=disk.raw,if=virtio,format=raw -nic user,model=virtio-net-pci -display none -serial file:boot.log &
+          qemu=$!
+          for i in $(seq 1 60); do sleep 10; grep -aq 'snapos login:' boot.log && break; done
+          kill $qemu 2>/dev/null || true
+          grep -aq 'snapos login:' boot.log && echo "reached the login prompt" || { tail -c 3000 boot.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-manual
+          path: |
+            install.log
+            boot.log
+            shots

@@ -181,6 +181,34 @@ EN[r_host]="Computer"
 PT[r_host]="Computador"
 EN[erase]="ALL DATA ON THIS DISK WILL BE ERASED"
 PT[erase]="TODOS OS DADOS DESTE DISCO SERAO APAGADOS"
+EN[m_title]="How should SnapOS use @1?"
+PT[m_title]="Como o SnapOS deve usar @1?"
+EN[m_erase]="Erase the whole disk (the simplest)"
+PT[m_erase]="Apagar o disco inteiro (o mais simples)"
+EN[m_manual]="Choose the partitions myself (the other partitions are kept)"
+PT[m_manual]="Escolher as particoes eu mesmo (as outras particoes ficam)"
+EN[m_editor]="Open the partition editor (cfdisk) to make room or a new partition? [y/N]: "
+PT[m_editor]="Abrir o editor de particoes (cfdisk) para abrir espaco ou criar uma particao? [s/N]: "
+EN[m_parts]="The partitions now:"
+PT[m_parts]="As particoes agora:"
+EN[m_root]="Partition for SnapOS (it is erased), e.g. @1: "
+PT[m_root]="Particao para o SnapOS (ela e apagada), ex. @1: "
+EN[m_efi]="EFI partition (it can be shared with Windows), e.g. @1: "
+PT[m_efi]="Particao EFI (pode ser a mesma do Windows), ex. @1: "
+EN[m_home]="A separate partition for /home (Enter for none): "
+PT[m_home]="Uma particao separada para /home (Enter para nenhuma): "
+EN[m_homefmt]="Erase @1 too? Its files are lost. [y/N]: "
+PT[m_homefmt]="Apagar @1 tambem? Os arquivos dela sao perdidos. [s/N]: "
+EN[m_bad]="@1 is not a partition. Pick one from the list."
+PT[m_bad]="@1 nao e uma particao. Escolha uma da lista."
+EN[m_twice]="That partition is already used for something else."
+PT[m_twice]="Essa particao ja esta sendo usada para outra coisa."
+EN[m_biosboot]="This disk is GPT on a BIOS computer: make a 1 MiB partition of type \"BIOS boot\" in the editor first."
+PT[m_biosboot]="Este disco e GPT num computador BIOS: crie antes no editor uma particao de 1 MiB do tipo \"BIOS boot\"."
+EN[m_erased]="ONLY THESE ARE ERASED: @1. The other partitions are kept."
+PT[m_erased]="SO ESTAS SAO APAGADAS: @1. As outras particoes ficam."
+EN[r_parts]="Partitions"
+PT[r_parts]="Particoes"
 EN[save]="Type SAVE to install (anything else cancels): "
 PT[save]="Digite SAVE para instalar (qualquer outra coisa cancela): "
 EN[cancel]="Cancelled. Nothing was changed."
@@ -294,9 +322,17 @@ FLAKE_ATTR=snapos
 # file snapos-answers.env answers the questions. Keys: LANG (en|pt), KEYMAP,
 # LOCALE, TIMEZONE, DISK (e.g. sda), USERNAME, PASSWORD, HOSTNAME,
 # DESKTOP (budgie|plasma|xfce|hyprland), LOOK (dark|light), GRAPHICS (auto|intel).
+# Partitions chosen by hand instead of erasing the disk: PARTITIONING=manual,
+# ROOT (e.g. sda3, erased), BOOT (the EFI partition, kept when it is FAT),
+# HOME (optional) and FORMAT_HOME (yes|no). SERIAL=yes also shows the
+# installed system on the serial line (the CI test reads it there).
 UNATTENDED=0
 load_answers() {
-    local dev=/dev/disk/by-label/SNAPOS_ANSWERS d f line k v
+    local dev=/dev/disk/by-label/SNAPOS_ANSWERS d f line k v i
+    # a USB stick can show up a few seconds after the installer starts
+    # (UEFI machines are slower at it): wait for it a little
+    udevadm settle --timeout=10 2>/dev/null
+    for i in 1 2 3 4 5 6 7 8; do [ -e "$dev" ] && break; sleep 1; done
     [ -e "$dev" ] || return 0
     d="$(mktemp -d)"
     mount -o ro "$dev" "$d" 2>/dev/null || { rmdir "$d"; return 0; }
@@ -305,7 +341,7 @@ load_answers() {
         while IFS= read -r line || [ -n "$line" ]; do
             k="${line%%=*}"; v="${line#*=}"
             case "$k" in
-                LANG|KEYMAP|LOCALE|TIMEZONE|DISK|USERNAME|PASSWORD|HOSTNAME|DESKTOP|LOOK|GRAPHICS|SOURCE) printf -v "A_$k" '%s' "$v" ;;
+                LANG|KEYMAP|LOCALE|TIMEZONE|DISK|USERNAME|PASSWORD|HOSTNAME|DESKTOP|LOOK|GRAPHICS|SOURCE|PARTITIONING|ROOT|BOOT|HOME|FORMAT_HOME|SERIAL) printf -v "A_$k" '%s' "$v" ;;
             esac
         done < "$f"
         UNATTENDED=1
@@ -721,6 +757,82 @@ step 4 s_tz
 if [ -n "${A_TIMEZONE:-}" ]; then ANSWER="$A_TIMEZONE"; else pick_from_list tz_title "timedatectl list-timezones" "${TZ_LIST[@]}"; fi
 TIMEZONE="$(clean_id "$ANSWER")"
 
+# ---- partitions chosen by hand (keeps everything else on the disk) --------
+# MANUAL=1: ROOTPART is erased and becomes SnapOS; on UEFI, BOOTPART is the
+# EFI partition, mounted at /boot/efi (kept when it is already FAT, so Windows
+# keeps booting); HOMEPART is optional. Nothing else on the disk is touched.
+MANUAL=0; BOOTPART=""; ROOTPART=""; HOMEPART=""; FMT_BOOT=0; FMT_HOME=0
+UEFI=0
+{ [ -d /sys/firmware/efi ] || [ "$ARCH" = aarch64 ]; } && UEFI=1
+is_part() { [ -b "/dev/$1" ] && [ "$(lsblk -dno TYPE "/dev/$1" 2>/dev/null)" = part ]; }
+show_parts() {
+    printf '\n  %s\n\n' "$(t m_parts)"
+    lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTTYPENAME "$TARGET" 2>/dev/null | sed 's/^/    /'
+    printf '\n'
+}
+# asks for one partition (answer key, text, example), refusing ones already used
+pick_part() {
+    local key="$1" text="$2" example="$3" optional="${4:-0}" name
+    # without questions, an optional partition that was not given is skipped
+    if [ "$UNATTENDED" = 1 ] && [ -z "$key" ] && [ "$optional" = 1 ]; then PICKED=""; return 0; fi
+    while :; do
+        if [ -n "$key" ]; then name="$key"; key=""; printf '  %s%s\n' "$(t "$text" "$example")" "$name"
+        else printf '  %s' "$(t "$text" "$example")"; read -r name; fi
+        name="$(printf '%s' "${name#/dev/}" | tr -cd 'a-z0-9')"
+        if [ -z "$name" ] && [ "$optional" = 1 ]; then PICKED=""; return 0; fi
+        if ! is_part "$name"; then
+            [ "$UNATTENDED" = 1 ] && die "$(t m_bad "$name")"
+            warn "$(t m_bad "$name")"; continue
+        fi
+        if [ "/dev/$name" = "$ROOTPART" ] || [ "/dev/$name" = "$BOOTPART" ]; then
+            [ "$UNATTENDED" = 1 ] && die "$(t m_twice)"
+            warn "$(t m_twice)"; continue
+        fi
+        PICKED="/dev/$name"; return 0
+    done
+}
+choose_partitioning() {
+    header
+    say "${BLD}$(t m_title "$TARGET")${RST}"
+    printf '\n'
+    opt 1 "$(t m_erase)"
+    opt 2 "$(t m_manual)"
+    if [ -n "${A_PARTITIONING:-}" ]; then
+        [ "$A_PARTITIONING" = manual ] && ANSWER=2 || ANSWER=1
+        caret; printf '%s\n' "$ANSWER"
+    else caret; read -r ANSWER; fi
+    [ "$ANSWER" = 2 ] || return 0
+    MANUAL=1
+    if [ "$UNATTENDED" = 0 ]; then
+        printf '\n  %s' "$(t m_editor)"; read -r ANSWER
+        case "$ANSWER" in y|Y|s|S) cfdisk "$TARGET"; partprobe "$TARGET" 2>/dev/null; udevadm settle --timeout=30 2>/dev/null ;; esac
+    fi
+    show_parts
+    local first; first="$(lsblk -lno NAME,TYPE "$TARGET" | awk '$2=="part"{print $1; exit}')"
+    pick_part "${A_ROOT:-}" m_root "${first:-sda2}"; ROOTPART="$PICKED"
+    if [ "$UEFI" = 1 ]; then
+        # the EFI partition: the one marked as such on this disk, if there is one
+        local esp; esp="$(lsblk -lno NAME,PARTTYPE "$TARGET" | awk 'tolower($2)=="c12a7328-f81f-11d2-ba4b-00a0c93ec93b"{print $1; exit}')"
+        pick_part "${A_BOOT:-}" m_efi "${esp:-sda1}"; BOOTPART="$PICKED"
+        [ "$(blkid -o value -s TYPE "$BOOTPART" 2>/dev/null)" = vfat ] || FMT_BOOT=1
+    else
+        # BIOS: GRUB goes to the disk itself; a GPT disk needs a "BIOS boot" partition for it
+        if [ "$(blkid -o value -s PTTYPE "$TARGET" 2>/dev/null)" = gpt ] && \
+           ! lsblk -lno PARTTYPE "$TARGET" | grep -qi '^21686148-6449-6e6f-744e-656564454649$'; then
+            die "$(t m_biosboot)"
+        fi
+    fi
+    pick_part "${A_HOME:-}" m_home "" 1; HOMEPART="$PICKED"
+    if [ -n "$HOMEPART" ]; then
+        if [ -n "${A_FORMAT_HOME:-}" ]; then ANSWER="$A_FORMAT_HOME"
+        elif [ "$UNATTENDED" = 1 ]; then ANSWER=no
+        else printf '  %s' "$(t m_homefmt "$HOMEPART")"; read -r ANSWER; fi
+        case "$ANSWER" in y|Y|s|S|yes) FMT_HOME=1 ;; esac
+        # a kept /home must hold a file system the system can mount
+        [ "$FMT_HOME" = 1 ] || [ -n "$(blkid -o value -s TYPE "$HOMEPART" 2>/dev/null)" ] || FMT_HOME=1
+    fi
+}
+
 step 5 s_disk
 header
 say "${BLD}$(t disk_title)${RST}"
@@ -732,6 +844,7 @@ TARGET="/dev/$DISKNAME"
 [ -b "$TARGET" ] || die "$(t disk_missing "$TARGET")"
 GRUB_DEVICE="$TARGET"
 [ "$ARCH" = aarch64 ] && GRUB_DEVICE=nodev
+choose_partitioning
 
 step 6 s_acct
 header
@@ -767,48 +880,31 @@ printf '  %-12s %s\n' "$(t r_kb)" "$KEYMAP"
 printf '  %-12s %s\n' "$(t r_loc)" "$LOCALE"
 printf '  %-12s %s\n' "$(t r_tz)" "$TIMEZONE"
 printf '  %-12s %s%s%s\n' "$(t r_disk)" "$BLD" "$TARGET" "$RST"
+if [ "$MANUAL" = 1 ]; then
+    printf '  %-12s %s = /%s%s%s\n' "$(t r_parts)" "$ROOTPART" \
+        "$([ -n "$BOOTPART" ] && printf ', %s = /boot/efi' "$BOOTPART")" \
+        "$([ -n "$HOMEPART" ] && printf ', %s = /home' "$HOMEPART")" ""
+fi
 printf '  %-12s %s\n' "$(t r_user)" "$USERNAME"
 printf '  %-12s %s\n' "$(t r_host)" "$HOSTNAME"
 printf '  %-12s %s\n' "$(t r_desk)" "$DESKLABEL"
 printf '  %-12s %s\n' "$(t r_look)" "$LOOKLABEL"
 printf '  %-12s %s\n' "$(t r_gfx)" "$GFXLABEL"
 printf '  %-12s %s\n' "$(t r_ver)" "$SRC_LABEL"
-printf '\n  %s%s%s\n\n' "$ACC" "$(t erase)" "$RST"
+if [ "$MANUAL" = 1 ]; then
+    ERASED="$ROOTPART"
+    [ "$FMT_BOOT" = 1 ] && ERASED="$ERASED $BOOTPART"
+    [ "$FMT_HOME" = 1 ] && ERASED="$ERASED $HOMEPART"
+    printf '\n  %s%s%s\n\n' "$ACC" "$(t m_erased "$ERASED")" "$RST"
+else
+    printf '\n  %s%s%s\n\n' "$ACC" "$(t erase)" "$RST"
+fi
 printf '  %s' "$(t save)"
 if [ "$UNATTENDED" = 1 ]; then CONFIRM=SAVE; printf 'SAVE\n'; else read -r CONFIRM; fi
 [ "$CONFIRM" = "SAVE" ] || die "$(t cancel)"
 
 step 11 s_install
 header
-say "$(t i_part "$TARGET")..."
-# The whole table is written in one go (sfdisk): written partition by
-# partition, a slow machine is still looking at the first one when the next
-# is added, and the kernel refuses the change.
-partition() {
-    wipefs -a "$TARGET" >/dev/null 2>&1
-    if command -v sfdisk >/dev/null 2>&1; then
-        printf '%s\n' 'label: gpt' \
-            'start=1MiB, size=1MiB, type=21686148-6449-6E6F-744E-656564454649, name=bios_boot' \
-            'size=512MiB, type=uefi, name=ESP' \
-            'type=linux, name=root' \
-            | sfdisk --quiet --wipe always --wipe-partitions always "$TARGET"
-    else
-        parted -s "$TARGET" -- mklabel gpt \
-            mkpart bios_boot 1MiB 2MiB set 1 bios_grub on \
-            mkpart ESP fat32 2MiB 514MiB set 2 esp on \
-            mkpart root ext4 514MiB 100%
-    fi
-}
-partition || { sleep 3; udevadm settle --timeout=30 2>/dev/null; partition; } || die "$(t f_part)"
-# the kernel and udev need a moment to see the new partitions; until they
-# are done the partitions are "busy"
-settle() { partprobe "$TARGET" 2>/dev/null; udevadm settle --timeout=30 2>/dev/null; sleep 2; }
-settle
-
-if [[ "$TARGET" =~ nvme|mmcblk ]]; then BOOTPART="${TARGET}p2"; ROOTPART="${TARGET}p3"
-else BOOTPART="${TARGET}2"; ROOTPART="${TARGET}3"; fi
-
-say "$(t i_fmt)..."
 # udev looks at every new partition and file system; while it does, the
 # device is busy. Each step waits for it and is tried again when refused.
 calm() { udevadm settle --timeout=30 2>/dev/null; sleep 1; }
@@ -817,17 +913,74 @@ retry() {
     for i in 1 2 3 4 5 6; do "$@" && return 0; calm; sleep 2; done
     return 1
 }
-# what an earlier system left at the same place on the disk is wiped first
-wipefs -a "$BOOTPART" "$ROOTPART" >/dev/null 2>&1; calm
-retry mkfs.fat -F 32 -n BOOT "$BOOTPART" || die "$(t f_fmt "$BOOTPART")"
-calm
-retry mkfs.ext4 -F -L nixos "$ROOTPART" || die "$(t f_fmt "$ROOTPART")"
-calm
+if [ "$MANUAL" = 1 ]; then
+    say "$(t i_fmt)..."
+    # only what was chosen is erased; the rest of the disk is left as it is
+    wipefs -a "$ROOTPART" >/dev/null 2>&1; calm
+    retry mkfs.ext4 -F -L nixos "$ROOTPART" || die "$(t f_fmt "$ROOTPART")"
+    if [ "$FMT_BOOT" = 1 ]; then
+        wipefs -a "$BOOTPART" >/dev/null 2>&1; calm
+        retry mkfs.fat -F 32 -n BOOT "$BOOTPART" || die "$(t f_fmt "$BOOTPART")"
+    fi
+    if [ "$FMT_HOME" = 1 ]; then
+        wipefs -a "$HOMEPART" >/dev/null 2>&1; calm
+        retry mkfs.ext4 -F -L home "$HOMEPART" || die "$(t f_fmt "$HOMEPART")"
+    fi
+    calm
+    say "$(t i_mount)..."
+    retry mount -t ext4 "$ROOTPART" /mnt || die "$(t f_mount "$ROOTPART")"
+    if [ -n "$BOOTPART" ]; then
+        # the kernels stay in /boot on SnapOS's own partition: an EFI partition
+        # made by Windows is often too small for them
+        mkdir -p /mnt/boot/efi
+        retry mount -t vfat "$BOOTPART" /mnt/boot/efi || die "$(t f_mount "$BOOTPART")"
+    fi
+    if [ -n "$HOMEPART" ]; then
+        mkdir -p /mnt/home
+        retry mount "$HOMEPART" /mnt/home || die "$(t f_mount "$HOMEPART")"
+    fi
+else
+    say "$(t i_part "$TARGET")..."
+    # The whole table is written in one go (sfdisk): written partition by
+    # partition, a slow machine is still looking at the first one when the next
+    # is added, and the kernel refuses the change.
+    partition() {
+        wipefs -a "$TARGET" >/dev/null 2>&1
+        if command -v sfdisk >/dev/null 2>&1; then
+            printf '%s\n' 'label: gpt' \
+                'start=1MiB, size=1MiB, type=21686148-6449-6E6F-744E-656564454649, name=bios_boot' \
+                'size=512MiB, type=uefi, name=ESP' \
+                'type=linux, name=root' \
+                | sfdisk --quiet --wipe always --wipe-partitions always "$TARGET"
+        else
+            parted -s "$TARGET" -- mklabel gpt \
+                mkpart bios_boot 1MiB 2MiB set 1 bios_grub on \
+                mkpart ESP fat32 2MiB 514MiB set 2 esp on \
+                mkpart root ext4 514MiB 100%
+        fi
+    }
+    partition || { sleep 3; udevadm settle --timeout=30 2>/dev/null; partition; } || die "$(t f_part)"
+    # the kernel and udev need a moment to see the new partitions; until they
+    # are done the partitions are "busy"
+    settle() { partprobe "$TARGET" 2>/dev/null; udevadm settle --timeout=30 2>/dev/null; sleep 2; }
+    settle
 
-say "$(t i_mount)..."
-retry mount -t ext4 "$ROOTPART" /mnt || die "$(t f_mount "$ROOTPART")"
-mkdir -p /mnt/boot
-retry mount -t vfat "$BOOTPART" /mnt/boot || die "$(t f_mount "$BOOTPART")"
+    if [[ "$TARGET" =~ nvme|mmcblk ]]; then BOOTPART="${TARGET}p2"; ROOTPART="${TARGET}p3"
+    else BOOTPART="${TARGET}2"; ROOTPART="${TARGET}3"; fi
+
+    say "$(t i_fmt)..."
+    # what an earlier system left at the same place on the disk is wiped first
+    wipefs -a "$BOOTPART" "$ROOTPART" >/dev/null 2>&1; calm
+    retry mkfs.fat -F 32 -n BOOT "$BOOTPART" || die "$(t f_fmt "$BOOTPART")"
+    calm
+    retry mkfs.ext4 -F -L nixos "$ROOTPART" || die "$(t f_fmt "$ROOTPART")"
+    calm
+
+    say "$(t i_mount)..."
+    retry mount -t ext4 "$ROOTPART" /mnt || die "$(t f_mount "$ROOTPART")"
+    mkdir -p /mnt/boot
+    retry mount -t vfat "$BOOTPART" /mnt/boot || die "$(t f_mount "$BOOTPART")"
+fi
 
 say "$(t i_hw)..."
 nixos-generate-config --root /mnt || die "$(t f_hw)"
@@ -848,6 +1001,28 @@ case "$KEYMAP" in
     *)        XKB_LAYOUT="${KEYMAP%%-*}"; XKB_VARIANT="" ;;
 esac
 
+# The boot loader. Whole disk: GRUB for BIOS and UEFI, as the removable
+# loader. Partitions by hand: GRUB is added next to what is there (a boot
+# entry of its own on UEFI) and lists the other systems it finds.
+if [ "$MANUAL" = 0 ]; then
+    BOOT_NIX="  boot.loader.grub.device = \"${GRUB_DEVICE}\";
+  boot.loader.grub.efiSupport = true;
+  boot.loader.grub.efiInstallAsRemovable = true;
+  boot.loader.efi.canTouchEfiVariables = false;"
+elif [ "$UEFI" = 1 ]; then
+    BOOT_NIX="  boot.loader.grub.device = \"nodev\";
+  boot.loader.grub.efiSupport = true;
+  boot.loader.grub.useOSProber = true;
+  boot.loader.grub.efiInstallAsRemovable = false;
+  boot.loader.efi.efiSysMountPoint = \"/boot/efi\";
+  boot.loader.efi.canTouchEfiVariables = true;"
+else
+    BOOT_NIX="  boot.loader.grub.device = \"${TARGET}\";
+  boot.loader.grub.efiSupport = false;
+  boot.loader.grub.efiInstallAsRemovable = false;
+  boot.loader.grub.useOSProber = true;"
+fi
+
 cat > /mnt/etc/snapos/local.nix <<EOF
 { ... }: {
   networking.hostName = "${HOSTNAME}";
@@ -862,10 +1037,7 @@ cat > /mnt/etc/snapos/local.nix <<EOF
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
   };
-  boot.loader.grub.device = "${GRUB_DEVICE}";$([ "$ARCH" = aarch64 ] && printf '\n  boot.kernelParams = [ "console=ttyAMA0,115200" "console=tty0" ];')
-  boot.loader.grub.efiSupport = true;
-  boot.loader.grub.efiInstallAsRemovable = true;
-  boot.loader.efi.canTouchEfiVariables = false;
+${BOOT_NIX}$([ "$ARCH" = aarch64 ] && printf '\n  boot.kernelParams = [ "console=ttyAMA0,115200" "console=tty0" ];')$([ "${A_SERIAL:-}" = yes ] && [ "$ARCH" != aarch64 ] && printf '\n  boot.kernelParams = [ "console=ttyS0,115200" "console=tty0" ];')
 }
 EOF
 write_graphics

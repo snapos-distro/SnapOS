@@ -1,0 +1,44 @@
+name: Carapace index
+
+# Every package of the nixpkgs SnapOS is pinned to (name, version, what it
+# does), so Carapace searches them at once instead of running `nix search`.
+# Made again whenever flake.lock moves.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "flake.lock", ".github/workflows/carapace-index.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  index:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: List every package
+        run: |
+          nix --extra-experimental-features 'nix-command flakes' search . '^' --json > all.json
+          # programs at the top level, and the desktop sets people install from;
+          # libraries inside language sets (python3Packages...) are left out
+          jq -r 'to_entries[]
+            | select(.key | startswith("legacyPackages."))
+            | (.key | sub("^legacyPackages\\.[^.]+\\."; "")) as $a
+            | select(($a | contains(".") | not) or ($a | test("^(kdePackages|gnome|xfce|mate|cinnamon|pantheon|qt6Packages|libsForQt5|gnomeExtensions)\\.")))
+            | [$a, (.value.version // ""), ((.value.description // "") | gsub("[\t\n\r]"; " ") | .[0:160])]
+            | @tsv' all.json | LC_ALL=C sort -u > index.tsv
+          wc -l index.tsv
+          grep -E '^(firefox|steam|vlc|blender)	' index.tsv
+          test "$(wc -l < index.tsv)" -gt 20000
+          xz -9e -T0 < index.tsv > branding/carapace/index.tsv.xz
+          ls -lh branding/carapace/index.tsv.xz
+      - name: Keep it in the repository
+        run: |
+          git add branding/carapace/index.tsv.xz
+          git diff --cached --quiet && exit 0
+          git -c user.name=Juco7L7 -c user.email= commit -q -m "Carapace index: every package of the pinned nixpkgs"
+          git push

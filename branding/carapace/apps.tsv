@@ -1,0 +1,120 @@
+# The programs on Carapace's first page and in its categories: Nix package,
+# name, icon, category, what it does. Every other package is found by the search.
+firefox	Firefox	firefox	Internet	Fast, private web browser
+google-chrome	Google Chrome	google-chrome	Internet	Google's web browser
+chromium	Chromium	chromium	Internet	The open source base of Chrome
+brave	Brave	brave-browser	Internet	A browser that blocks ads
+librewolf	LibreWolf	librewolf	Internet	Firefox, more private
+tor-browser	Tor Browser	torbrowser	Internet	Browse anonymously
+discord	Discord	discord	Internet	Talk with your friends
+telegram-desktop	Telegram	telegram	Internet	Fast and simple chat
+signal-desktop	Signal	signal-desktop	Internet	Private messages
+element-desktop	Element	element-desktop	Internet	Secure chat on Matrix
+thunderbird	Thunderbird	thunderbird	Internet	E-mail, calendar and contacts
+qbittorrent	qBittorrent	qbittorrent	Internet	Download torrents
+transmission_4-gtk	Transmission	transmission	Internet	A simple torrent client
+filezilla	FileZilla	filezilla	Internet	Send files to servers
+zoom-us	Zoom	Zoom	Internet	Video calls
+slack	Slack	slack	Internet	Work chat
+teams-for-linux	Teams	teams-for-linux	Internet	Microsoft Teams calls and chat
+anydesk	AnyDesk	anydesk	Internet	Control another computer
+remmina	Remmina	remmina	Internet	Remote desktop
+zapzap	ZapZap (WhatsApp)	com.rtosta.zapzap	Internet	WhatsApp on the desktop
+steam	Steam	steam	Games	Thousands of games
+lutris	Lutris	lutris	Games	All your games in one place
+heroic	Heroic	heroic	Games	Epic, GOG and Amazon games
+prismlauncher	Prism Launcher	org.prismlauncher.PrismLauncher	Games	Play Minecraft
+retroarch	RetroArch	retroarch	Games	Classic consoles, one app
+dolphin-emu	Dolphin	dolphin-emu	Games	GameCube and Wii games
+pcsx2	PCSX2	pcsx2	Games	PlayStation 2 games
+ppsspp	PPSSPP	ppsspp	Games	PSP games
+supertuxkart	SuperTuxKart	supertuxkart	Games	Kart racing with Tux
+luanti	Luanti	minetest	Games	Build worlds, block by block
+zeroad	0 A.D.	0ad	Games	Build an ancient empire
+openttd	OpenTTD	openttd	Games	Build a transport empire
+wesnoth	Battle for Wesnoth	wesnoth	Games	Turn-based fantasy battles
+xonotic	Xonotic	xonotic	Games	Fast arena shooter
+supertux	SuperTux	supertux	Games	Jump-and-run with Tux
+mindustry	Mindustry	mindustry	Games	Factory and tower defence
+endless-sky	Endless Sky	endless-sky	Games	Explore space and trade
+openra	OpenRA	openra	Games	Classic real-time strategy
+gnome-mines	Mines	gnome-mines	Games	The classic minesweeper
+aisleriot	Solitaire	gnome-aisleriot	Games	Card games
+gnome-chess	Chess	gnome-chess	Games	Play chess
+gimp	GIMP	gimp	Graphics	Edit photos and images
+krita	Krita	krita	Graphics	Digital painting
+inkscape	Inkscape	inkscape	Graphics	Vector drawing
+blender	Blender	blender	Graphics	3D creation for everyone
+darktable	darktable	darktable	Graphics	Develop your camera's photos
+digikam	digiKam	digikam	Graphics	Organize your photos
+pinta	Pinta	pinta	Graphics	Simple image editing
+mypaint	MyPaint	mypaint	Graphics	Paint and sketch
+kdePackages.kolourpaint	KolourPaint	kolourpaint	Graphics	Easy paint program
+freecad	FreeCAD	freecad	Graphics	3D design for real objects
+librecad	LibreCAD	librecad	Graphics	2D drawings and plans
+scribus	Scribus	scribus	Graphics	Make posters and magazines
+gthumb	gThumb	gthumb	Graphics	View and sort images
+upscayl	Upscayl	upscayl	Graphics	Make images bigger with AI
+vlc	VLC	vlc	Audio & Video	Plays every video and song
+mpv	mpv	mpv	Audio & Video	A light video player
+spotify	Spotify	spotify	Audio & Video	Music and podcasts
+obs-studio	OBS Studio	com.obsproject.Studio	Audio & Video	Record and stream your screen
+audacity	Audacity	audacity	Audio & Video	Record and edit audio
+kdePackages.kdenlive	Kdenlive	kdenlive	Audio & Video	Edit videos
+shotcut	Shotcut	shotcut	Audio & Video	Edit videos, simply
+handbrake	HandBrake	fr.handbrake.ghb	Audio & Video	Convert videos
+lmms	LMMS	lmms	Audio & Video	Make music
+ardour	Ardour	ardour	Audio & Video	Record music like a studio
+musescore	MuseScore	musescore	Audio & Video	Write sheet music
+rhythmbox	Rhythmbox	rhythmbox	Audio & Video	Your music library
+strawberry	Strawberry	strawberry	Audio & Video	Music player for collectors
+celluloid	Celluloid	io.github.celluloid_player.Celluloid	Audio & Video	A simple video player
+easyeffects	EasyEffects	easyeffects	Audio & Video	Equalizer and effects
+libreoffice	LibreOffice	libreoffice-main	Office	Documents, sheets and slides
+onlyoffice-desktopeditors	ONLYOFFICE	onlyoffice-desktopeditors	Office	Office that opens Word files well
+obsidian	Obsidian	obsidian	Office	Notes that link to each other
+joplin-desktop	Joplin	joplin	Office	Notes and to-dos, synced
+logseq	Logseq	logseq	Office	Notes in outlines
+xournalpp	Xournal++	com.github.xournalpp.xournalpp	Office	Write and draw on PDFs
+calibre	calibre	calibre-gui	Office	Your e-book library
+keepassxc	KeePassXC	keepassxc	Office	Keep your passwords safe
+bitwarden-desktop	Bitwarden	bitwarden	Office	Passwords in every device
+zotero	Zotero	zotero	Office	Collect and cite sources
+anki	Anki	anki	Office	Flashcards that help you remember
+thunderbird	Thunderbird	thunderbird	Office	E-mail, calendar and contacts
+kdePackages.okular	Okular	okular	Office	Read PDFs and books
+vscodium	VSCodium	vscodium	Development	Code editor
+vscode	Visual Studio Code	visual-studio-code	Development	Microsoft's code editor
+zed-editor	Zed	zed	Development	A fast code editor
+android-studio	Android Studio	android-studio	Development	Make Android apps
+godot_4	Godot	godot	Development	Make your own games
+arduino-ide	Arduino IDE	arduino-ide	Development	Program Arduino boards
+kicad	KiCad	kicad	Development	Design circuit boards
+wireshark	Wireshark	wireshark	Development	Look inside your network
+dbeaver-bin	DBeaver	dbeaver	Development	Work with databases
+postman	Postman	postman	Development	Test web APIs
+gitkraken	GitKraken	gitkraken	Development	Git with a picture
+github-desktop	GitHub Desktop	github-desktop	Development	GitHub without the terminal
+neovim	Neovim	nvim	Development	The text editor in the terminal
+emacs	Emacs	emacs	Development	The extensible editor
+virt-manager	Virtual Machines	virt-manager	Development	Run other systems in a window
+gparted	GParted	gparted	Utilities	Partition your disks
+btop	btop	btop	Utilities	See what your computer is doing
+mission-center	Mission Center	io.missioncenter.MissionCenter	Utilities	Task manager with graphs
+baobab	Disk Usage	baobab	Utilities	See what fills your disk
+gnome-disk-utility	Disks	gnome-disks	Utilities	Format and check disks
+bleachbit	BleachBit	bleachbit	Utilities	Clean junk files
+flameshot	Flameshot	flameshot	Utilities	Screenshots with arrows and text
+peazip	PeaZip	peazip	Utilities	Open zip, rar and 7z
+localsend	LocalSend	localsend	Utilities	Send files to your phone
+syncthing	Syncthing	syncthing	Utilities	Sync folders between devices
+kdePackages.kdeconnect-kde	KDE Connect	kdeconnect	Utilities	Your phone and computer together
+gnome-tweaks	Tweaks	org.gnome.tweaks	Utilities	More settings for the desktop
+timeshift	Timeshift	timeshift	Utilities	Snapshots of your files
+stellarium	Stellarium	stellarium	Education	A planetarium on your screen
+geogebra6	GeoGebra	geogebra	Education	Math graphs and geometry
+kdePackages.kalgebra	KAlgebra	kalgebra	Education	A graphing calculator
+gcompris	GCompris	gcompris	Education	Games that teach kids
+tuxpaint	Tux Paint	tuxpaint	Education	Drawing for kids
+kdePackages.marble	Marble	marble	Education	A globe of the Earth
+celestia	Celestia	celestia	Education	Travel through space

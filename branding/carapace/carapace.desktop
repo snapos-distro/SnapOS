@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Carapace
+GenericName=Software store
+Comment=Install and remove programs from Nix
+Exec=carapace
+Icon=carapace
+Terminal=false
+Categories=System;PackageManager;GTK;
+Keywords=store;software;programs;apps;install;nix;

@@ -1,0 +1,71 @@
+name: Carapace window
+
+# Builds Carapace and uses it on a virtual screen: the first page, a
+# category, a program's page, a search of every Nix package (the index), and
+# the install window with one of Snappy's scenes, also on a small screen.
+# Installing for real needs pkexec and a password, so here the install runs
+# a stand-in that prints like a rebuild; the desktop VM tests
+# open Carapace on each desktop.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "src/carapace.c", "branding/carapace/**", ".github/workflows/carapace-gui.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  window:
+    if: github.repository == 'snapos-distro/snapos-test'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-3-dev xvfb imagemagick fonts-dejavu-core papirus-icon-theme
+          xz -dk branding/carapace/index.tsv.xz
+          make bin/carapace CARAPACE_DATA=$PWD/branding/carapace GUICFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror -Wno-deprecated-declarations"
+      - name: Use it
+        run: |
+          mkdir -p shots ~/.config/gtk-3.0
+          printf '[Settings]\ngtk-icon-theme-name=Papirus-Dark\ngtk-application-prefer-dark-theme=1\n' > ~/.config/gtk-3.0/settings.ini
+          export GTK_THEME=Adwaita:dark
+          screen="-screen 0 1100x720x24"
+          echo "== the first page"
+          xvfb-run -a -s "$screen" bash -c 'bin/carapace & pid=$!; sleep 5; import -window root shots/01-explore.png; kill $pid'
+          xvfb-run -a -s "-screen 0 1280x2600x24" bash -c 'CARAPACE_TEST_SIZE=1270x2580 bin/carapace & pid=$!; sleep 5; import -window root shots/01-explore-all.png; kill $pid'
+          xvfb-run -a -s "$screen" bash -c 'CARAPACE_TEST_CATEGORY=Games bin/carapace & pid=$!; sleep 4; import -window root shots/03-games.png; kill $pid'
+          xvfb-run -a -s "$screen" bash -c 'CARAPACE_TEST_APP=krita bin/carapace & pid=$!; sleep 4; import -window root shots/04-app.png; kill $pid'
+          echo "== a search of every Nix package, from the index"
+          xvfb-run -a -s "$screen" bash -c '
+            CARAPACE_TEST_SEARCH=minecraft bin/carapace > search.log 2>&1 & pid=$!
+            for i in $(seq 1 20); do grep -q CARAPACE-FOUND search.log && break; sleep 0.5; done
+            sleep 1; import -window root shots/02-search.png; kill $pid'
+          cat search.log
+          found=$(sed -n "s/^CARAPACE-FOUND //p" search.log)
+          test "${found:-0}" -gt 10
+          echo "== the install window on a small screen"
+          xvfb-run -a -s "-screen 0 1024x600x24" bash -c 'CARAPACE_SCENE=fishing CARAPACE_TEST_INSTALL=vlc CARAPACE_RUN="sleep 20" bin/carapace & pid=$!; sleep 5; import -window root shots/05-install-small.png; kill $pid'
+          echo "== installing, with one of Snappy's scenes"
+          printf 'echo "snapctl: added $2"; for i in $(seq 1 12); do echo "building /nix/store/xxx-$2-part-$i.drv..."; sleep 1; done\n' > fake-add
+          for scene in flowers fishing; do
+            xvfb-run -a -s "$screen" bash -c '
+              CARAPACE_SCENE='"$scene"' CARAPACE_TEST_INSTALL=vlc CARAPACE_RUN="sh $PWD/fake-add" bin/carapace > install-'"$scene"'.log 2>&1 & pid=$!
+              sleep 2
+              for i in $(seq -w 1 60); do import -window root "shots/'"$scene"'-$i.png"; sleep 0.25; done
+              for i in $(seq 1 20); do grep -q CARAPACE-OK install-'"$scene"'.log && break; sleep 1; done
+              import -window root "shots/'"$scene"'-done.png"; kill $pid'
+            grep -q "CARAPACE-OK vlc" install-$scene.log
+            convert -delay 25 -loop 0 shots/$scene-[0-9]*.png -resize 60% shots/install-$scene.gif
+            rm shots/$scene-[0-9]*.png
+          done
+          ls shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: carapace-window
+          path: shots

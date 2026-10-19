@@ -42,6 +42,8 @@
   snapos.packs.snapguard.enable = true;  # the antivirus
   snapos.packs.debian.enable = true;     # .deb programs
   snapos.packs.updater.enable = true;    # updates of the packs
+  snapos.packs.store.enable = true;      # Carapace, the store
+  # snapos.packs.flatpak.enable = true;  # Flatpak with Flathub, if you need it
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   system.stateVersion = "26.05";

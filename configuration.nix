@@ -83,7 +83,6 @@
     dpkg
     fastfetch
     git
-    gnome-software
     pciutils
     snapguard
     snapos-tools

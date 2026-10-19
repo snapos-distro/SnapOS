@@ -24,7 +24,7 @@
 
 > [!IMPORTANT]
 > **Despite the name, SnapOS does not use Snap!** No Snap packages and no snapd. The name comes from the
-> alligator snapping turtle, our mascot Snappy. Programs come from Nix, with Flatpak and `.deb` files if you want them.
+> alligator snapping turtle, our mascot Snappy. Programs come from Nix (the Carapace store), with `.deb` files and Flatpak if you want them.
 
 > [!CAUTION]
 > **Flash with balenaEtcher.** Do not copy the file onto the drive by hand, and
@@ -106,9 +106,9 @@ rebuild: it is gone, with nothing left behind.
 | **SnapGuard** | a defender based on ClamAV, in real time; nothing is deleted without your approval |
 | **SnapWeb** | the browser: official Firefox with a dark and red look |
 | **`.deb` support** | open a `.deb` and SnapOS scans it, then installs it in a real Debian layer |
-| **Software** | GNOME Software with Flatpak and Flathub |
+| **Carapace** | the store: every program in Nix, installed with a click and undone like any change |
 | **Four desktops** | Budgie, KDE Plasma, Xfce or Hyprland, each in dark or light |
-| **A guided installer** | eleven steps, in English or Portuguese, for x86_64 and ARM64 |
+| **A guided installer** | eleven steps, in English or Portuguese, for x86_64 and ARM64; it can keep your other partitions for dual boot |
 | **SnapHelper** | a short tour that opens the first time you log in |
 
 <br>
@@ -146,6 +146,13 @@ screen shows which one.
 **Building it yourself instead?** The manual (minimal) image is a terminal: you write
 your own NixOS system and add the SnapOS packs you want. The
 [handbook](https://snapos-distro.github.io/handbook/) shows every step.
+
+**Next to another system?** After the disk, the installer asks whether to
+erase the whole disk or to choose the partitions yourself. Choosing them
+keeps everything else (Windows, another distro, your files): you can open the
+partition editor (cfdisk) to make room, then pick the partition for SnapOS,
+the EFI partition (shared with Windows) and, if you want, one for `/home`.
+GRUB then lists the other systems at start.
 
 The installer asks eleven things: network, keyboard, language, time zone, disk,
 account, desktop, look (dark or light) and graphics, then shows a review before
@@ -196,6 +203,11 @@ SOURCE=latest
 
 `SOURCE=latest` (the default) installs the newest SnapOS when the internet is
 up; `SOURCE=bundled` installs the version on the USB stick.
+
+To keep the other partitions (another system, your files), add
+`PARTITIONING=manual` with `ROOT=sda3` (the partition SnapOS goes on: it is
+erased), `BOOT=sda1` (the EFI partition, kept when it is already FAT) and,
+optionally, `HOME=sda4` with `FORMAT_HOME=no`.
 
 </details>
 
@@ -326,7 +338,8 @@ would.
 
 **Other places to get programs**
 
-- **Software**: GNOME Software with Flatpak and Flathub.
+- **Carapace**: the store. It shows every program in Nix (Steam and other unfree ones too), and installing is `snapos add` with a progress window.
+- **Flatpak**: off by default; turn on `snapos.packs.flatpak.enable = true;` for a program only Flathub has.
 - **A `.deb` file**: see [Debian packages](#debian-packages-deb).
 
 <details>

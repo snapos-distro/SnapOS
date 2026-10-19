@@ -11,7 +11,7 @@ BINS     = $(addprefix $(BIN)/,$(TOOLS))
 
 all: $(BINS)
 
-gui: $(BIN)/snapguard-gui $(BIN)/snaphelper $(BIN)/snapupdate
+gui: $(BIN)/snapguard-gui $(BIN)/snaphelper $(BIN)/snapupdate $(BIN)/carapace
 
 $(BIN)/snapguard-gui: src/snapguard-gui.c | $(BIN)
 	$(CC) $(GUICFLAGS) -o $@ $< $$($(PKG_CONFIG) --cflags gtk+-3.0) $(LDFLAGS) $$($(PKG_CONFIG) --libs gtk+-3.0) -lm
@@ -21,6 +21,10 @@ $(BIN)/snaphelper: src/snaphelper.c | $(BIN)
 
 $(BIN)/snapupdate: src/snapupdate.c | $(BIN)
 	$(CC) $(GUICFLAGS) -o $@ $< $$($(PKG_CONFIG) --cflags gtk+-3.0) $(LDFLAGS) $$($(PKG_CONFIG) --libs gtk+-3.0)
+
+CARAPACE_DATA ?= $(PREFIX)/share/carapace
+$(BIN)/carapace: src/carapace.c | $(BIN)
+	$(CC) $(GUICFLAGS) -DDATADIR='"$(CARAPACE_DATA)"' -o $@ $< $$($(PKG_CONFIG) --cflags gtk+-3.0) $(LDFLAGS) $$($(PKG_CONFIG) --libs gtk+-3.0)
 
 $(BIN)/%: src/%.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)

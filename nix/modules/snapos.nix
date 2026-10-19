@@ -12,7 +12,7 @@ in {
 
   config = {
     snapos.packs = mapAttrs (_: _: { enable = mkDefault true; }) {
-      theme = 0; desktops = 0; commands = 0; snapguard = 0; snapweb = 0; debian = 0; helper = 0; updater = 0;
+      theme = 0; desktops = 0; commands = 0; snapguard = 0; snapweb = 0; debian = 0; helper = 0; updater = 0; store = 0;
     };
 
     system.nixos.distroName = "SnapOS";
@@ -40,26 +40,6 @@ in {
     # Budgie turns on Rygel, a DLNA media server that shares the user's music,
     # videos and photos with other devices on the network. Not on SnapOS.
     services.gnome.rygel.enable = false;
-
-    services.flatpak.enable = config.services.xserver.enable;
-    xdg.portal.enable = mkIf config.services.flatpak.enable true;
-    xdg.portal.extraPortals = mkIf config.services.flatpak.enable [ pkgs.xdg-desktop-portal-gtk ];
-    xdg.portal.config.common.default = mkIf config.services.flatpak.enable (mkDefault "*");
-
-    systemd.services.flatpak-flathub = mkIf config.services.flatpak.enable {
-      wantedBy = [ "multi-user.target" ];
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-      path = [ pkgs.flatpak ];
-      script = ''
-        until flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo; do
-          sleep 30
-        done
-        until flatpak update --system --appstream; do
-          sleep 30
-        done
-      '';
-    };
 
     systemd.tmpfiles.rules = [
       # The system lives in /etc/snapos; the NixOS path keeps working through a link.

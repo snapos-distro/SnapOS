@@ -9,7 +9,7 @@
 with lib;
 let pack = name: what: mkEnableOption "the SnapOS ${name} pack: ${what}"; in
 {
-  imports = [ ./theme.nix ./commands.nix ./snapguard.nix ./snapweb.nix ./debian.nix ./helper.nix ./updater.nix ../modules/desktop.nix ];
+  imports = [ ./theme.nix ./commands.nix ./snapguard.nix ./snapweb.nix ./debian.nix ./helper.nix ./updater.nix ./store.nix ./flatpak.nix ../modules/desktop.nix ];
 
   options.snapos = {
     packs = {
@@ -21,6 +21,8 @@ let pack = name: what: mkEnableOption "the SnapOS ${name} pack: ${what}"; in
       debian.enable    = pack "debian" "the Debian layer for .deb programs (snap-deb)";
       helper.enable    = pack "helper" "SnapHelper, the tour at the first login";
       updater.enable   = pack "updater" "the update window and the update guard";
+      store.enable     = pack "store" "Carapace, the store for the programs from Nix";
+      flatpak.enable   = pack "flatpak" "Flatpak with Flathub (off in the full SnapOS too)";
     };
     theme = mkOption { type = types.str; default = "snappy-red"; };
     appearance = mkOption {
