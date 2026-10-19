@@ -22,6 +22,10 @@
 
 <a name="before-you-install"></a>
 
+> [!IMPORTANT]
+> **Despite the name, SnapOS does not use Snap!** No Snap packages and no snapd. The name comes from the
+> alligator snapping turtle, our mascot Snappy. Programs come from Nix, with Flatpak and `.deb` files if you want them.
+
 > [!CAUTION]
 > **Flash with balenaEtcher.** Do not copy the file onto the drive by hand, and
 > do not use "ISO mode" tools (in Rufus, choose *DD Image mode*). If the boot
