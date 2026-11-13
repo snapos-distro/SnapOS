@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/desktop.png" alt="The SnapOS desktop: red Snappy wallpaper, a terminal with fastfetch, and the SnapGuard window" width="720">
+  <img src="docs/banner.png" alt="SnapOS, the easy road to NixOS: the logo, Snappy and the command snapos rollback">
 </p>
 
 <h1 align="center">SnapOS</h1>
